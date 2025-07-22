@@ -37,6 +37,55 @@ export class IngredientsController {
     return await this.ingredientsService.bulkCreate(createIngredientDtos);
   }
 
+  @Post('validate-csv')
+  @Roles(UserRole.OWNER)
+  @UseInterceptors(FileInterceptor('file', {
+    storage: multer.diskStorage({
+      destination: (req, file, cb) => {
+        const uploadDir = path.join(__dirname, '..', '..', 'uploads');
+        cb(null, uploadDir);
+      },
+      filename: (req, file, cb) => {
+        cb(null, `${Date.now()}-${file.originalname}`);
+      },
+    }),
+  }))
+  @ApiOperation({ summary: 'Validate CSV and suggest mappings' })
+  @ApiResponse({
+    status: 200,
+    description: 'Validation result with mapping suggestions',
+    schema: {
+      type: 'object',
+      properties: {
+        suggestedMappings: {
+          type: 'object',
+          additionalProperties: { type: 'string' },
+        },
+        unmappedColumns: { type: 'array', items: { type: 'string' } },
+        warnings: { type: 'array', items: { type: 'string' } },
+        isValid: { type: 'boolean' },
+        expectedFields: { type: 'array', items: { type: 'string' } },
+        note: { type: 'string' },
+      },
+    },
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+        },
+      },
+    },
+  })
+  async validateCsv(@UploadedFile() file: Express.Multer.File): Promise<any> {
+    if (!file) throw new BadRequestException('No file uploaded');
+    return await this.ingredientsService.validateCsv(file);
+  }
+
   @Post('import-csv')
   @Roles(UserRole.OWNER)
   @UseInterceptors(FileInterceptor('file', {
@@ -51,7 +100,33 @@ export class IngredientsController {
     }),
   }))
   @ApiOperation({ summary: 'Import ingredients from CSV' })
-  @ApiResponse({ status: 201, description: 'Ingredients imported', type: [Ingredient] })
+  @ApiResponse({
+    status: 201,
+    description: 'Ingredients imported with summary',
+    schema: {
+      type: 'object',
+      properties: {
+        importedIngredients: {
+          type: 'array',
+          items: { $ref: '#/components/schemas/Ingredient' },
+        },
+        summary: {
+          type: 'object',
+          properties: {
+            totalRows: { type: 'number' },
+            successfullyImported: { type: 'number' },
+            errors: { type: 'array', items: { type: 'string' } },
+            unmappedColumns: { type: 'array', items: { type: 'string' } },
+            processedMappings: {
+              type: 'object',
+              additionalProperties: { type: 'string' },
+            },
+            note: { type: 'string' },
+          },
+        },
+      },
+    },
+  })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
@@ -61,12 +136,26 @@ export class IngredientsController {
           type: 'string',
           format: 'binary',
         },
+        mapping: {
+          type: 'string',
+          description: 'User-defined column mappings as a JSON string (e.g., {"name":"name"}) based on validate-csv response',
+          // 'required' should be at the parent object level, not here
+        },
       },
     },
   })
-  async importCsv(@UploadedFile() file: Express.Multer.File): Promise<Ingredient[]> {
+  async importCsv(@UploadedFile() file: Express.Multer.File, @Body('mapping') mapping: string): Promise<any> {
     if (!file) throw new BadRequestException('No file uploaded');
-    return await this.ingredientsService.importCsv(file);
+    if (!mapping) {
+      throw new BadRequestException('Mapping object is required. Please run /validate-csv first and use the suggested mapping object (e.g., {"name":"name","unit":"unit","purchase_price":"purchase_price","waste_percent":"waste_percent","cost_per_ml":"cost_per_ml","cost_per_gram":"cost_per_gram","cost_per_unit":"cost_per_unit","supplier":"supplier"}) in the request body.');
+    }
+    let parsedMapping: Record<string, string>;
+    try {
+      parsedMapping = JSON.parse(mapping);
+    } catch (e) {
+      throw new BadRequestException('Invalid mapping format. Please provide a valid JSON object (e.g., {"name":"name","unit":"unit",...}).');
+    }
+    return await this.ingredientsService.importCsv(file, parsedMapping);
   }
 
   @Get()
