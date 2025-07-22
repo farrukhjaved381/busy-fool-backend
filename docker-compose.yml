@@ -1,0 +1,41 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: busyfool_db
+    environment:
+      POSTGRES_USER: busyfool
+      POSTGRES_PASSWORD: securepassword
+      POSTGRES_DB: busyfool_dev
+      POSTGRES_HOST_AUTH_METHOD: md5
+    ports:
+      - "5433:5432"  # Map host 5433 → container 5432
+    volumes:
+      - postgres_data:/var/lib/postgresql/data 
+    networks:
+      - busyfool_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U busyfool -d busyfool_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4:8.5
+    container_name: busyfool_pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@busyfool.com
+      PGADMIN_DEFAULT_PASSWORD: admin123
+    ports:
+      - "5050:80"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - busyfool_net
+
+volumes:
+  postgres_data:
+
+networks:
+  busyfool_net:
+    driver: bridge
