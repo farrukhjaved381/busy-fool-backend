@@ -14,7 +14,7 @@ export class AnalyticsService {
   ) {}
 
   async getDashboard(startDate: Date, endDate: Date): Promise<any> {
-    console.log('Dashboard request params:', { startDate, endDate });
+    
     if (!startDate || !endDate || startDate > endDate) {
       throw new BadRequestException('Invalid date range. Start date must be before end date.');
     }

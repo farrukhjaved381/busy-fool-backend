@@ -392,16 +392,24 @@ export class IngredientsService {
 
   async update(id: string, updateIngredientDto: UpdateIngredientDto): Promise<Ingredient> {
     const ingredient = await this.findOne(id);
-    const { cost_per_ml, cost_per_gram, cost_per_unit } = this.calculateCosts(
-      updateIngredientDto.purchase_price || 0,
-      updateIngredientDto.waste_percent || 0,
-      updateIngredientDto.unit || ingredient.unit
-    );
+    // Use updated values with fallbacks to existing values
+    const newPurchasePrice = updateIngredientDto.purchase_price ?? ingredient.purchase_price;
+    const newWastePercent = updateIngredientDto.waste_percent ?? ingredient.waste_percent;
+    const newUnit = updateIngredientDto.unit ?? ingredient.unit;
+
+    // Recalculate costs based on new or existing data
+    const { cost_per_ml, cost_per_gram, cost_per_unit } = this.calculateCosts(newPurchasePrice, newWastePercent, newUnit);
+
+    // Apply updates, ensuring only relevant cost field is set
     Object.assign(ingredient, updateIngredientDto, {
-      cost_per_ml,
-      cost_per_gram,
-      cost_per_unit,
+      purchase_price: newPurchasePrice,
+      waste_percent: newWastePercent,
+      unit: newUnit,
+      cost_per_ml: cost_per_ml ?? null,
+      cost_per_gram: cost_per_gram ?? null,
+      cost_per_unit: cost_per_unit ?? null,
     });
+
     return this.ingredientRepository.save(ingredient);
   }
 
