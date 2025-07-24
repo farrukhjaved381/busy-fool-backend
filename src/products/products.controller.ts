@@ -34,33 +34,11 @@ export class ProductsController {
   @Post()
   @Roles(UserRole.OWNER)
   @ApiOperation({ summary: 'Create a new product', description: 'Creates a new product with associated ingredients.' })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        name: { type: 'string', example: 'Coffee Latte' },
-        category: { type: 'string', example: 'Beverage' },
-        sell_price: { type: 'number', example: 4.50 },
-        ingredients: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              ingredientId: { type: 'string', example: '123e4567-e89b-12d3-a456-426614174000' },
-              quantity: { type: 'number', example: 200 },
-              unit: { type: 'string', example: 'ml' },
-              is_optional: { type: 'boolean', example: false }
-            },
-            required: ['ingredientId', 'quantity', 'unit']
-          }
-        }
-      },
-      required: ['name', 'category', 'sell_price']
-    }
-  })
+  @ApiBody({ type: CreateProductDto })
   @ApiResponse({
     status: HttpStatus.CREATED,
     description: 'Product successfully created.',
+    type: Product,
     content: {
       'application/json': {
         example: {
@@ -72,6 +50,7 @@ export class ProductsController {
           margin_amount: 2.00,
           margin_percent: 44.44,
           status: 'profitable',
+          created_at: '2025-07-24T11:15:00Z',
           ingredients: [
             { id: '123e4567-e89b-12d3-a456-426614174003', quantity: 200, unit: 'ml', line_cost: 1.00, is_optional: false },
             { id: '123e4567-e89b-12d3-a456-426614174004', quantity: 10, unit: 'g', line_cost: 1.50, is_optional: true }
@@ -93,6 +72,7 @@ export class ProductsController {
   @ApiResponse({
     status: HttpStatus.OK,
     description: 'Successfully retrieved list of products.',
+    type: [Product],
     content: {
       'application/json': {
         example: [
@@ -105,6 +85,7 @@ export class ProductsController {
             margin_amount: 2.00,
             margin_percent: 44.44,
             status: 'profitable',
+            created_at: '2025-07-24T11:15:00Z',
             ingredients: [
               { id: '123e4567-e89b-12d3-a456-426614174003', quantity: 200, unit: 'ml', line_cost: 1.00, is_optional: false }
             ]
@@ -118,6 +99,7 @@ export class ProductsController {
             margin_amount: 1.50,
             margin_percent: 50.00,
             status: 'profitable',
+            created_at: '2025-07-24T11:15:00Z',
             ingredients: [
               { id: '123e4567-e89b-12d3-a456-426614174006', quantity: 150, unit: 'ml', line_cost: 0.75, is_optional: false }
             ]
@@ -138,6 +120,7 @@ export class ProductsController {
   @ApiResponse({
     status: HttpStatus.OK,
     description: 'Successfully retrieved product details.',
+    type: Product,
     content: {
       'application/json': {
         example: {
@@ -149,6 +132,7 @@ export class ProductsController {
           margin_amount: 2.00,
           margin_percent: 44.44,
           status: 'profitable',
+          created_at: '2025-07-24T11:15:00Z',
           ingredients: [
             { id: '123e4567-e89b-12d3-a456-426614174003', quantity: 200, unit: 'ml', line_cost: 1.00, is_optional: false }
           ]
@@ -166,34 +150,11 @@ export class ProductsController {
   @Patch(':id')
   @Roles(UserRole.OWNER)
   @ApiOperation({ summary: 'Update a product', description: 'Updates an existing product and its ingredients.' })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        name: { type: 'string', example: 'Updated Coffee Latte', nullable: true },
-        category: { type: 'string', example: 'Beverage', nullable: true },
-        sell_price: { type: 'number', example: 5.00, nullable: true },
-        ingredients: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              ingredientId: { type: 'string', example: '123e4567-e89b-12d3-a456-426614174000' },
-              quantity: { type: 'number', example: 250 },
-              unit: { type: 'string', example: 'ml' },
-              is_optional: { type: 'boolean', example: false }
-            },
-            required: ['ingredientId', 'quantity', 'unit']
-          },
-          nullable: true
-        }
-      },
-      required: []
-    }
-  })
+  @ApiBody({ type: UpdateProductDto })
   @ApiResponse({
     status: HttpStatus.OK,
     description: 'Product successfully updated.',
+    type: Product,
     content: {
       'application/json': {
         example: {
@@ -205,6 +166,7 @@ export class ProductsController {
           margin_amount: 2.25,
           margin_percent: 45.00,
           status: 'profitable',
+          created_at: '2025-07-24T11:15:00Z',
           ingredients: [
             { id: '123e4567-e89b-12d3-a456-426614174003', quantity: 250, unit: 'ml', line_cost: 1.25, is_optional: false }
           ]
@@ -238,16 +200,7 @@ export class ProductsController {
   @Post('what-if')
   @Roles(UserRole.OWNER)
   @ApiOperation({ summary: 'Simulate price change impact', description: 'Simulates the impact of price adjustments on multiple products.' })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        productIds: { type: 'array', items: { type: 'string' }, example: ['123e4567-e89b-12d3-a456-426614174002', '123e4567-e89b-12d3-a456-426614174005'] },
-        priceAdjustment: { type: 'number', example: 1.00 }
-      },
-      required: ['productIds', 'priceAdjustment']
-    }
-  })
+  @ApiBody({ type: WhatIfDto })
   @ApiResponse({
     status: HttpStatus.OK,
     description: 'Successfully calculated price change impacts.',
@@ -270,18 +223,7 @@ export class ProductsController {
 
   @Post('milk-swap')
   @ApiOperation({ summary: 'Calculate margin impact of swapping an ingredient', description: 'Calculates the margin impact of replacing an ingredient.' })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        productId: { type: 'string', example: '123e4567-e89b-12d3-a456-426614174002' },
-        originalIngredientId: { type: 'string', example: '123e4567-e89b-12d3-a456-426614174000' },
-        newIngredientId: { type: 'string', example: '123e4567-e89b-12d3-a456-426614174001' },
-        upcharge: { type: 'number', example: 0.50 }
-      },
-      required: ['productId', 'originalIngredientId', 'newIngredientId']
-    }
-  })
+  @ApiBody({ type: MilkSwapDto })
   @ApiResponse({
     status: HttpStatus.OK,
     description: 'Successfully calculated margin impact.',
@@ -306,18 +248,11 @@ export class ProductsController {
   @Post(':id/quick-action')
   @Roles(UserRole.OWNER)
   @ApiOperation({ summary: 'Apply quick action (e.g., price change)', description: 'Applies a quick price change to a product.' })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        new_sell_price: { type: 'number', example: 5.50 }
-      },
-      required: ['new_sell_price']
-    }
-  })
+  @ApiBody({ type: QuickActionDto })
   @ApiResponse({
     status: HttpStatus.OK,
     description: 'Successfully applied quick action.',
+    type: Product,
     content: {
       'application/json': {
         example: {
@@ -329,6 +264,7 @@ export class ProductsController {
           margin_amount: 3.00,
           margin_percent: 54.55,
           status: 'profitable',
+          created_at: '2025-07-24T11:15:00Z',
           ingredients: [
             { id: '123e4567-e89b-12d3-a456-426614174003', quantity: 200, unit: 'ml', line_cost: 1.00, is_optional: false }
           ]

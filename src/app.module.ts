@@ -33,7 +33,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
         password: configService.get('DB_PASSWORD'),
         database: configService.get('DB_NAME'),
         entities: ['dist/**/*.entity.js'], // Use compiled output
-        synchronize: false,
+        synchronize: true,
         logging: true,
       }),
       inject: [ConfigService],

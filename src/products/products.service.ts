@@ -10,6 +10,7 @@ import { MilkSwapDto } from './dto/milk-swap.dto';
 import { QuickActionDto } from './dto/quick-action.dto';
 import { IngredientsService } from '../ingredients/ingredients.service';
 import { Ingredient } from '../ingredients/entities/ingredient.entity';
+import { ApiProperty } from '@nestjs/swagger';
 
 /**
  * Service to manage product-related operations including creation, updates, and analytics.
@@ -35,16 +36,9 @@ export class ProductsService {
       throw new BadRequestException('Name, category, and positive sell price are required');
     }
 
-    const product = this.productsRepository.create({
-      name: createProductDto.name,
-      category: createProductDto.category,
-      sell_price: createProductDto.sell_price,
-      status: 'pending',
-    });
-
-    await this.productsRepository.save(product);
-
     let totalCost = 0;
+    const productIngredients: ProductIngredient[] = [];
+
     for (const ingredientDto of createProductDto.ingredients || []) {
       if (!ingredientDto.ingredientId || ingredientDto.quantity <= 0 || !ingredientDto.unit) {
         throw new BadRequestException('Each ingredient must have a valid ID, positive quantity, and unit');
@@ -56,20 +50,25 @@ export class ProductsService {
       totalCost += lineCost;
 
       const productIngredient = this.productIngredientsRepository.create({
-        product,
-        ingredient,
         quantity: ingredientDto.quantity,
         unit: ingredientDto.unit,
         line_cost: lineCost,
         is_optional: ingredientDto.is_optional || false,
       });
-      await this.productIngredientsRepository.save(productIngredient);
+      productIngredients.push(productIngredient);
     }
 
-    product.total_cost = totalCost;
-    product.margin_amount = product.sell_price - totalCost;
-    product.margin_percent = product.sell_price > 0 ? (product.margin_amount / product.sell_price) * 100 : 0;
-    product.status = this.calculateStatus(product.margin_amount);
+    const product = this.productsRepository.create({
+      name: createProductDto.name,
+      category: createProductDto.category,
+      sell_price: createProductDto.sell_price,
+      total_cost: totalCost,
+      margin_amount: createProductDto.sell_price - totalCost,
+      margin_percent: createProductDto.sell_price > 0 ? ((createProductDto.sell_price - totalCost) / createProductDto.sell_price) * 100 : 0,
+      status: this.calculateStatus(createProductDto.sell_price - totalCost),
+      ingredients: productIngredients,
+    });
+
     return this.productsRepository.save(product);
   }
 
@@ -135,6 +134,10 @@ export class ProductsService {
       }
       product.total_cost = totalCost;
       product.margin_amount = product.sell_price - totalCost;
+      product.margin_percent = product.sell_price > 0 ? (product.margin_amount / product.sell_price) * 100 : 0;
+      product.status = this.calculateStatus(product.margin_amount);
+    } else {
+      product.margin_amount = product.sell_price - product.total_cost;
       product.margin_percent = product.sell_price > 0 ? (product.margin_amount / product.sell_price) * 100 : 0;
       product.status = this.calculateStatus(product.margin_amount);
     }

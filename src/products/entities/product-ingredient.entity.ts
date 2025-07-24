@@ -18,18 +18,18 @@ export class ProductIngredient {
   ingredient: Ingredient;
 
   @Column('decimal', { precision: 10, scale: 2 })
-  @ApiProperty({ description: 'Quantity of the ingredient used' })
+  @ApiProperty({ description: 'Quantity of the ingredient used', example: 200 })
   quantity: number;
 
   @Column()
-  @ApiProperty({ description: 'Unit of measurement (e.g., ml, g)' })
+  @ApiProperty({ description: 'Unit of measurement (e.g., ml, g)', example: 'ml' })
   unit: string;
 
   @Column('decimal', { precision: 10, scale: 2 })
-  @ApiProperty({ description: 'Cost of this ingredient for the product' })
+  @ApiProperty({ description: 'Cost of this ingredient for the product', example: 1.00 })
   line_cost: number;
 
   @Column({ default: false })
-  @ApiProperty({ description: 'Whether the ingredient is optional' })
+  @ApiProperty({ description: 'Whether the ingredient is optional', example: false })
   is_optional: boolean;
 }
