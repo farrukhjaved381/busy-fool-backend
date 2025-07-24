@@ -22,7 +22,26 @@ export class IngredientsController {
   @Post()
   @Roles(UserRole.OWNER)
   @ApiOperation({ summary: 'Create a new ingredient' })
-  @ApiResponse({ status: 201, description: 'Ingredient created successfully', type: Ingredient })
+  @ApiResponse({
+    status: 201,
+    description: 'Ingredient created successfully',
+    content: {
+      'application/json': {
+        example: {
+          id: '0175dc94-c5ab-4fb1-86d6-664eee45be18',
+          name: 'Oat Milk',
+          unit: '2L carton',
+          purchase_price: 2.53,
+          waste_percent: 10,
+          cost_per_ml: 0.0023,
+          cost_per_gram: null,
+          cost_per_unit: null,
+          supplier: 'Oatly',
+          created_at: '2025-07-24T11:15:00Z'
+        }
+      }
+    }
+  })
   @ApiResponse({ status: 400, description: 'Bad request (e.g., missing required fields like name or unit)' })
   @ApiResponse({ status: 401, description: 'Unauthorized (missing or invalid JWT)' })
   @ApiResponse({ status: 403, description: 'Forbidden (non-owner role)' })
@@ -46,7 +65,40 @@ export class IngredientsController {
   @Post('bulk')
   @Roles(UserRole.OWNER)
   @ApiOperation({ summary: 'Create multiple ingredients in bulk' })
-  @ApiResponse({ status: 201, description: 'Ingredients created successfully', type: [Ingredient] })
+  @ApiResponse({
+    status: 201,
+    description: 'Ingredients created successfully',
+    content: {
+      'application/json': {
+        example: [
+          {
+            id: '0175dc94-c5ab-4fb1-86d6-664eee45be18',
+            name: 'Oat Milk',
+            unit: '2L carton',
+            purchase_price: 2.53,
+            waste_percent: 10,
+            cost_per_ml: 0.0023,
+            cost_per_gram: null,
+            cost_per_unit: null,
+            supplier: 'Oatly',
+            created_at: '2025-07-24T11:15:00Z'
+          },
+          {
+            id: '0189ef12-d3cd-4f9a-8b7c-9e0f1a2b3c4d',
+            name: 'Almond Milk',
+            unit: '1L carton',
+            purchase_price: 2.00,
+            waste_percent: 5,
+            cost_per_ml: 0.0019,
+            cost_per_gram: null,
+            cost_per_unit: null,
+            supplier: 'Almond Breeze',
+            created_at: '2025-07-24T11:15:00Z'
+          }
+        ]
+      }
+    }
+  })
   @ApiResponse({ status: 400, description: 'Bad request (e.g., no ingredients provided)' })
   @ApiResponse({ status: 401, description: 'Unauthorized (missing or invalid JWT)' })
   @ApiResponse({ status: 403, description: 'Forbidden (non-owner role)' })
@@ -87,19 +139,18 @@ export class IngredientsController {
   @ApiResponse({
     status: 200,
     description: 'Validation result with mapping suggestions',
-    schema: {
-      type: 'object',
-      properties: {
-        suggestedMappings: {
-          type: 'object',
-          additionalProperties: { type: 'string' },
-          example: { 'Ingredient Name': 'name', 'Unit Size': 'unit', 'Purchase Cost': 'purchase_price' }
-        },
-        unmappedColumns: { type: 'array', items: { type: 'string' }, example: ['Extra Column'] },
-        warnings: { type: 'array', items: { type: 'string' }, example: ['Possible match for name in Ingredient Name (0.85)'] },
-        isValid: { type: 'boolean', example: true },
-        expectedFields: { type: 'array', items: { type: 'string' }, example: ['name', 'unit', 'purchase_price', 'waste_percent', 'cost_per_ml', 'cost_per_gram', 'cost_per_unit', 'supplier'] },
-        note: { type: 'string', example: 'Map all expected fields, prioritizing required ones (name, unit). Use "undefined" for unmapped fields. Provide a mapping object directly like shown in `sampleMapping` when calling /import-csv.' }
+    content: {
+      'application/json': {
+        example: {
+          suggestedMappings: { 'Ingredient Name': 'name', 'Unit Size': 'unit', 'Purchase Cost': 'purchase_price' },
+          unmappedColumns: ['Extra Column'],
+          warnings: ['Possible match for name in Ingredient Name (0.85)'],
+          isValid: true,
+          expectedFields: ['name', 'unit', 'purchase_price', 'waste_percent', 'cost_per_ml', 'cost_per_gram', 'cost_per_unit', 'supplier'],
+          sampleMapping: { 'Ingredient Name': 'name', 'Unit Size': 'unit', 'Purchase Cost': 'undefined', 'Extra Column': 'undefined' },
+          sampleMappingStringified: '{"Ingredient Name":"name","Unit Size":"unit","Purchase Cost":"undefined","Extra Column":"undefined"}',
+          note: 'Map all expected fields, prioritizing required ones (name, unit). Use "undefined" for unmapped fields. Provide a mapping object directly like shown in `sampleMapping` when calling /import-csv.'
+        }
       }
     }
   })
@@ -141,36 +192,30 @@ export class IngredientsController {
   @ApiResponse({
     status: 201,
     description: 'Ingredients imported successfully with summary',
-    schema: {
-      type: 'object',
-      properties: {
-        importedIngredients: {
-          type: 'array',
-          items: { $ref: '#/components/schemas/Ingredient' },
-          example: [
+    content: {
+      'application/json': {
+        example: {
+          importedIngredients: [
             {
-              "id": "0175dc94-c5ab-4fb1-86d6-664eee45be18",
-              "name": "Unknown",
-              "unit": "1kg",
-              "purchase_price": 5.00,
-              "waste_percent": 0,
-              "cost_per_ml": null,
-              "cost_per_gram": 0.005,
-              "cost_per_unit": null,
-              "supplier": "Ahmad",
-              "created_at": "2025-07-23T10:18:45.141Z"
+              id: '0175dc94-c5ab-4fb1-86d6-664eee45be18',
+              name: 'Oat Milk',
+              unit: '2L carton',
+              purchase_price: 2.53,
+              waste_percent: 10,
+              cost_per_ml: 0.0023,
+              cost_per_gram: null,
+              cost_per_unit: null,
+              supplier: 'Oatly',
+              created_at: '2025-07-24T11:15:00Z'
             }
-          ]
-        },
-        summary: {
-          type: 'object',
-          properties: {
-            totalRows: { type: 'number', example: 5 },
-            successfullyImported: { type: 'number', example: 4 },
-            errors: { type: 'array', items: { type: 'string' }, example: ['Row 2: Invalid waste_percent: 150 (must be 0-100), using 0'] },
-            unmappedColumns: { type: 'array', items: { type: 'string' }, example: ['Extra Column'] },
-            processedMappings: { type: 'object', additionalProperties: { type: 'string' }, example: { 'Ingredient Name': 'name', 'Unit Size': 'unit' } },
-            note: { type: 'string', example: 'Using default mapping from validate-csv.' }
+          ],
+          summary: {
+            totalRows: 5,
+            successfullyImported: 4,
+            errors: ['Row 2: Invalid waste_percent: 150 (must be 0-100), using 0'],
+            unmappedColumns: ['Extra Column'],
+            processedMappings: { 'Ingredient Name': 'name', 'Unit Size': 'unit' },
+            note: 'Using default mapping from validate-csv.'
           }
         }
       }
@@ -213,20 +258,40 @@ export class IngredientsController {
 
   @Get()
   @ApiOperation({ summary: 'Get all ingredients' })
-  @ApiResponse({ status: 200, description: 'List of all ingredients', type: [Ingredient], example: [
-    {
-      "id": "0175dc94-c5ab-4fb1-86d6-664eee45be18",
-      "name": "Unknown",
-      "unit": "1kg",
-      "purchase_price": 5.00,
-      "waste_percent": 0,
-      "cost_per_ml": null,
-      "cost_per_gram": 0.005,
-      "cost_per_unit": null,
-      "supplier": "Ahmad",
-      "created_at": "2025-07-23T10:18:45.141Z"
+  @ApiResponse({
+    status: 200,
+    description: 'List of all ingredients',
+    content: {
+      'application/json': {
+        example: [
+          {
+            id: '0175dc94-c5ab-4fb1-86d6-664eee45be18',
+            name: 'Oat Milk',
+            unit: '2L carton',
+            purchase_price: 2.53,
+            waste_percent: 10,
+            cost_per_ml: 0.0023,
+            cost_per_gram: null,
+            cost_per_unit: null,
+            supplier: 'Oatly',
+            created_at: '2025-07-24T11:15:00Z'
+          },
+          {
+            id: '0189ef12-d3cd-4f9a-8b7c-9e0f1a2b3c4d',
+            name: 'Almond Milk',
+            unit: '1L carton',
+            purchase_price: 2.00,
+            waste_percent: 5,
+            cost_per_ml: 0.0019,
+            cost_per_gram: null,
+            cost_per_unit: null,
+            supplier: 'Almond Breeze',
+            created_at: '2025-07-24T11:15:00Z'
+          }
+        ]
+      }
     }
-  ] })
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized (missing or invalid JWT)' })
   @ApiResponse({ status: 403, description: 'Forbidden (non-owner role)' })
   async findAll(): Promise<Ingredient[]> {
@@ -235,18 +300,26 @@ export class IngredientsController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get an ingredient by ID' })
-  @ApiResponse({ status: 200, description: 'Ingredient details', type: Ingredient, example: {
-    "id": "0175dc94-c5ab-4fb1-86d6-664eee45be18",
-    "name": "Unknown",
-    "unit": "1kg",
-    "purchase_price": 5.00,
-    "waste_percent": 0,
-    "cost_per_ml": null,
-    "cost_per_gram": 0.005,
-    "cost_per_unit": null,
-    "supplier": "Ahmad",
-    "created_at": "2025-07-23T10:18:45.141Z"
-  } })
+  @ApiResponse({
+    status: 200,
+    description: 'Ingredient details',
+    content: {
+      'application/json': {
+        example: {
+          id: '0175dc94-c5ab-4fb1-86d6-664eee45be18',
+          name: 'Oat Milk',
+          unit: '2L carton',
+          purchase_price: 2.53,
+          waste_percent: 10,
+          cost_per_ml: 0.0023,
+          cost_per_gram: null,
+          cost_per_unit: null,
+          supplier: 'Oatly',
+          created_at: '2025-07-24T11:15:00Z'
+        }
+      }
+    }
+  })
   @ApiResponse({ status: 404, description: 'Ingredient not found' })
   @ApiResponse({ status: 401, description: 'Unauthorized (missing or invalid JWT)' })
   @ApiResponse({ status: 403, description: 'Forbidden (non-owner role)' })
@@ -257,18 +330,26 @@ export class IngredientsController {
   @Patch(':id')
   @Roles(UserRole.OWNER)
   @ApiOperation({ summary: 'Update an ingredient' })
-  @ApiResponse({ status: 200, description: 'Updated ingredient', type: Ingredient, example: {
-    "id": "0175dc94-c5ab-4fb1-86d6-664eee45be18",
-    "name": "Oat Milk",
-    "unit": "2L carton",
-    "purchase_price": 2.53,
-    "waste_percent": 10,
-    "cost_per_ml": 0.0023,
-    "cost_per_gram": null,
-    "cost_per_unit": null,
-    "supplier": "Oatly",
-    "created_at": "2025-07-23T10:18:45.141Z"
-  } })
+  @ApiResponse({
+    status: 200,
+    description: 'Updated ingredient',
+    content: {
+      'application/json': {
+        example: {
+          id: '0175dc94-c5ab-4fb1-86d6-664eee45be18',
+          name: 'Oat Milk',
+          unit: '2L carton',
+          purchase_price: 2.53,
+          waste_percent: 10,
+          cost_per_ml: 0.0023,
+          cost_per_gram: null,
+          cost_per_unit: null,
+          supplier: 'Oatly',
+          created_at: '2025-07-24T11:15:00Z'
+        }
+      }
+    }
+  })
   @ApiResponse({ status: 404, description: 'Ingredient not found' })
   @ApiResponse({ status: 400, description: 'Bad request (e.g., invalid data)' })
   @ApiResponse({ status: 401, description: 'Unauthorized (missing or invalid JWT)' })
@@ -293,7 +374,10 @@ export class IngredientsController {
   @Delete(':id')
   @Roles(UserRole.OWNER)
   @ApiOperation({ summary: 'Delete an ingredient' })
-  @ApiResponse({ status: 204, description: 'Ingredient deleted successfully' })
+  @ApiResponse({
+    status: 204,
+    description: 'Ingredient deleted successfully'
+  })
   @ApiResponse({ status: 404, description: 'Ingredient not found' })
   @ApiResponse({ status: 401, description: 'Unauthorized (missing or invalid JWT)' })
   @ApiResponse({ status: 403, description: 'Forbidden (non-owner role)' })
