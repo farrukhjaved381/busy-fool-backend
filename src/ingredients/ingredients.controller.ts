@@ -30,19 +30,21 @@ export class IngredientsController {
         example: {
           id: '0175dc94-c5ab-4fb1-86d6-664eee45be18',
           name: 'Oat Milk',
-          unit: '2L carton',
+          unit: 'L',
+          quantity: 2,
           purchase_price: 2.53,
           waste_percent: 10,
           cost_per_ml: 0.0023,
           cost_per_gram: null,
           cost_per_unit: null,
           supplier: 'Oatly',
+          stock: 2,
           created_at: '2025-07-24T11:15:00Z'
         }
       }
     }
   })
-  @ApiResponse({ status: 400, description: 'Bad request (e.g., missing required fields like name or unit)' })
+  @ApiResponse({ status: 400, description: 'Bad request (e.g., missing required fields like name, unit, or quantity)' })
   @ApiResponse({ status: 401, description: 'Unauthorized (missing or invalid JWT)' })
   @ApiResponse({ status: 403, description: 'Forbidden (non-owner role)' })
   @ApiBody({
@@ -50,12 +52,13 @@ export class IngredientsController {
       type: 'object',
       properties: {
         name: { type: 'string', example: 'Oat Milk' },
-        unit: { type: 'string', example: '2L carton' },
+        unit: { type: 'string', example: 'L' },
+        quantity: { type: 'number', example: 2 },
         purchase_price: { type: 'number', example: 2.53 },
         waste_percent: { type: 'number', example: 10 },
         supplier: { type: 'string', example: 'Oatly', nullable: true }
       },
-      required: ['name', 'unit']
+      required: ['name', 'unit', 'quantity']
     }
   })
   async create(@Body() createIngredientDto: CreateIngredientDto): Promise<Ingredient> {
@@ -74,32 +77,36 @@ export class IngredientsController {
           {
             id: '0175dc94-c5ab-4fb1-86d6-664eee45be18',
             name: 'Oat Milk',
-            unit: '2L carton',
+            unit: 'L',
+            quantity: 2,
             purchase_price: 2.53,
             waste_percent: 10,
             cost_per_ml: 0.0023,
             cost_per_gram: null,
             cost_per_unit: null,
             supplier: 'Oatly',
+            stock: 2,
             created_at: '2025-07-24T11:15:00Z'
           },
           {
             id: '0189ef12-d3cd-4f9a-8b7c-9e0f1a2b3c4d',
             name: 'Almond Milk',
-            unit: '1L carton',
+            unit: 'L',
+            quantity: 1,
             purchase_price: 2.00,
             waste_percent: 5,
             cost_per_ml: 0.0019,
             cost_per_gram: null,
             cost_per_unit: null,
             supplier: 'Almond Breeze',
+            stock: 1,
             created_at: '2025-07-24T11:15:00Z'
           }
         ]
       }
     }
   })
-  @ApiResponse({ status: 400, description: 'Bad request (e.g., no ingredients provided)' })
+  @ApiResponse({ status: 400, description: 'Bad request (e.g., no ingredients provided or invalid quantity)' })
   @ApiResponse({ status: 401, description: 'Unauthorized (missing or invalid JWT)' })
   @ApiResponse({ status: 403, description: 'Forbidden (non-owner role)' })
   @ApiBody({
@@ -109,70 +116,18 @@ export class IngredientsController {
         type: 'object',
         properties: {
           name: { type: 'string', example: 'Oat Milk' },
-          unit: { type: 'string', example: '2L carton' },
+          unit: { type: 'string', example: 'L' },
+          quantity: { type: 'number', example: 2 },
           purchase_price: { type: 'number', example: 2.53 },
           waste_percent: { type: 'number', example: 10 },
           supplier: { type: 'string', example: 'Oatly', nullable: true }
         },
-        required: ['name', 'unit']
+        required: ['name', 'unit', 'quantity']
       }
     }
   })
   async bulkCreate(@Body() createIngredientDtos: CreateIngredientDto[]): Promise<Ingredient[]> {
     return await this.ingredientsService.bulkCreate(createIngredientDtos);
-  }
-
-  @Post('validate-csv')
-  @Roles(UserRole.OWNER)
-  @UseInterceptors(FileInterceptor('file', {
-    storage: multer.diskStorage({
-      destination: (req, file, cb) => {
-        const uploadDir = path.join(__dirname, '..', '..', 'uploads');
-        cb(null, uploadDir);
-      },
-      filename: (req, file, cb) => {
-        cb(null, `${Date.now()}-${file.originalname}`);
-      },
-    }),
-  }))
-  @ApiOperation({ summary: 'Validate CSV and suggest mappings' })
-  @ApiResponse({
-    status: 200,
-    description: 'Validation result with mapping suggestions',
-    content: {
-      'application/json': {
-        example: {
-          suggestedMappings: { 'Ingredient Name': 'name', 'Unit Size': 'unit', 'Purchase Cost': 'purchase_price' },
-          unmappedColumns: ['Extra Column'],
-          warnings: ['Possible match for name in Ingredient Name (0.85)'],
-          isValid: true,
-          expectedFields: ['name', 'unit', 'purchase_price', 'waste_percent', 'cost_per_ml', 'cost_per_gram', 'cost_per_unit', 'supplier'],
-          sampleMapping: { 'Ingredient Name': 'name', 'Unit Size': 'unit', 'Purchase Cost': 'undefined', 'Extra Column': 'undefined' },
-          sampleMappingStringified: '{"Ingredient Name":"name","Unit Size":"unit","Purchase Cost":"undefined","Extra Column":"undefined"}',
-          note: 'Map all expected fields, prioritizing required ones (name, unit). Use "undefined" for unmapped fields. Provide a mapping object directly like shown in `sampleMapping` when calling /import-csv.'
-        }
-      }
-    }
-  })
-  @ApiResponse({ status: 400, description: 'Bad request (e.g., no file uploaded)' })
-  @ApiResponse({ status: 401, description: 'Unauthorized (missing or invalid JWT)' })
-  @ApiResponse({ status: 403, description: 'Forbidden (non-owner role)' })
-  @ApiConsumes('multipart/form-data')
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        file: {
-          type: 'string',
-          format: 'binary',
-          description: 'CSV file to validate'
-        }
-      }
-    }
-  })
-  async validateCsv(@UploadedFile() file: Express.Multer.File): Promise<any> {
-    if (!file) throw new BadRequestException('No file uploaded');
-    return await this.ingredientsService.validateCsv(file);
   }
 
   @Post('import-csv')
@@ -186,7 +141,14 @@ export class IngredientsController {
       filename: (req, file, cb) => {
         cb(null, `${Date.now()}-${file.originalname}`);
       },
+ 
     }),
+    fileFilter: (req, file, cb) => {
+      if (path.extname(file.originalname).toLowerCase() !== '.csv') {
+        return cb(new BadRequestException('Only .csv files are allowed'), false);
+      }
+      cb(null, true);
+    }
   }))
   @ApiOperation({ summary: 'Import ingredients from CSV' })
   @ApiResponse({
@@ -197,31 +159,40 @@ export class IngredientsController {
         example: {
           importedIngredients: [
             {
-              id: '0175dc94-c5ab-4fb1-86d6-664eee45be18',
-              name: 'Oat Milk',
-              unit: '2L carton',
-              purchase_price: 2.53,
-              waste_percent: 10,
-              cost_per_ml: 0.0023,
+              id: 'ac3c7887-9ae1-4221-95fd-6344b432d18b',
+              name: 'Milk',
+              unit: 'L',
+              quantity: 10,
+              purchase_price: 80,
+              waste_percent: 5,
+              stock: 10,
+              cost_per_ml: 0.0084,
               cost_per_gram: null,
               cost_per_unit: null,
-              supplier: 'Oatly',
-              created_at: '2025-07-24T11:15:00Z'
+              supplier: 'Dairy Farm',
+              created_at: '2025-07-24T06:28:38.233Z'
             }
           ],
           summary: {
-            totalRows: 5,
-            successfullyImported: 4,
-            errors: ['Row 2: Invalid waste_percent: 150 (must be 0-100), using 0'],
-            unmappedColumns: ['Extra Column'],
-            processedMappings: { 'Ingredient Name': 'name', 'Unit Size': 'unit' },
-            note: 'Using default mapping from validate-csv.'
+            totalRows: 2,
+            successfullyImported: 1,
+            errors: [],
+            unmappedColumns: [],
+            processedMappings: {
+              name: 'name',
+              unit: 'unit',
+              purchase_price: 'purchase_price',
+              waste_percent: 'waste_percent',
+              supplier: 'supplier',
+              quantity: 'quantity'
+            },
+            note: 'Ingredients imported using automatic column mapping. Stock updated based on quantity.'
           }
         }
       }
     }
   })
-  @ApiResponse({ status: 400, description: 'Bad request (e.g., no file or invalid mapping)' })
+  @ApiResponse({ status: 400, description: 'Bad request (e.g., no file, invalid file type, or missing required fields)' })
   @ApiResponse({ status: 401, description: 'Unauthorized (missing or invalid JWT)' })
   @ApiResponse({ status: 403, description: 'Forbidden (non-owner role)' })
   @ApiConsumes('multipart/form-data')
@@ -232,28 +203,14 @@ export class IngredientsController {
         file: {
           type: 'string',
           format: 'binary',
-          description: 'CSV file to import'
-        },
-        mapping: {
-          type: 'string',
-          description: 'User-defined column mappings as a JSON string (e.g., {"name":"name"}) based on validate-csv response',
-          example: '{"Ingredient Name":"name","Unit Size":"unit","Purchase Cost":"purchase_price"}'
+          description: 'CSV file to import (e.g., with headers: name, unit, quantity, purchase_price, waste_percent, supplier)'
         }
       }
     }
   })
-  async importCsv(@UploadedFile() file: Express.Multer.File, @Body('mapping') mapping: string): Promise<any> {
+  async importCsv(@UploadedFile() file: Express.Multer.File): Promise<any> {
     if (!file) throw new BadRequestException('No file uploaded');
-    if (!mapping) {
-      throw new BadRequestException('Mapping object is required. Please run /validate-csv first and use the suggested mapping object (e.g., {"name":"name","unit":"unit","purchase_price":"purchase_price","waste_percent":"waste_percent","cost_per_ml":"cost_per_ml","cost_per_gram":"cost_per_gram","cost_per_unit":"cost_per_unit","supplier":"supplier"}) in the request body.');
-    }
-    let parsedMapping: Record<string, string>;
-    try {
-      parsedMapping = JSON.parse(mapping);
-    } catch (e) {
-      throw new BadRequestException('Invalid mapping format. Please provide a valid JSON object (e.g., {"name":"name","unit":"unit",...}).');
-    }
-    return await this.ingredientsService.importCsv(file, parsedMapping);
+    return await this.ingredientsService.importCsv(file);
   }
 
   @Get()
@@ -267,25 +224,29 @@ export class IngredientsController {
           {
             id: '0175dc94-c5ab-4fb1-86d6-664eee45be18',
             name: 'Oat Milk',
-            unit: '2L carton',
+            unit: 'L',
+            quantity: 2,
             purchase_price: 2.53,
             waste_percent: 10,
             cost_per_ml: 0.0023,
             cost_per_gram: null,
             cost_per_unit: null,
             supplier: 'Oatly',
+            stock: 2,
             created_at: '2025-07-24T11:15:00Z'
           },
           {
             id: '0189ef12-d3cd-4f9a-8b7c-9e0f1a2b3c4d',
             name: 'Almond Milk',
-            unit: '1L carton',
+            unit: 'L',
+            quantity: 1,
             purchase_price: 2.00,
             waste_percent: 5,
             cost_per_ml: 0.0019,
             cost_per_gram: null,
             cost_per_unit: null,
             supplier: 'Almond Breeze',
+            stock: 1,
             created_at: '2025-07-24T11:15:00Z'
           }
         ]
@@ -308,13 +269,15 @@ export class IngredientsController {
         example: {
           id: '0175dc94-c5ab-4fb1-86d6-664eee45be18',
           name: 'Oat Milk',
-          unit: '2L carton',
+          unit: 'L',
+          quantity: 2,
           purchase_price: 2.53,
           waste_percent: 10,
           cost_per_ml: 0.0023,
           cost_per_gram: null,
           cost_per_unit: null,
           supplier: 'Oatly',
+          stock: 2,
           created_at: '2025-07-24T11:15:00Z'
         }
       }
@@ -338,13 +301,15 @@ export class IngredientsController {
         example: {
           id: '0175dc94-c5ab-4fb1-86d6-664eee45be18',
           name: 'Oat Milk',
-          unit: '2L carton',
-          purchase_price: 2.53,
-          waste_percent: 10,
-          cost_per_ml: 0.0023,
+          unit: 'L',
+          quantity: 3,
+          purchase_price: 2.90,
+          waste_percent: 12,
+          cost_per_ml: 0.0026,
           cost_per_gram: null,
           cost_per_unit: null,
-          supplier: 'Oatly',
+          supplier: 'Alpro',
+          stock: 5,
           created_at: '2025-07-24T11:15:00Z'
         }
       }
@@ -359,10 +324,12 @@ export class IngredientsController {
       type: 'object',
       properties: {
         name: { type: 'string', example: 'Oat Milk' },
-        unit: { type: 'string', example: '2L carton' },
-        purchase_price: { type: 'number', example: 2.53 },
-        waste_percent: { type: 'number', example: 10 },
-        supplier: { type: 'string', example: 'Oatly', nullable: true }
+        unit: { type: 'string', example: 'L' },
+        quantity: { type: 'number', example: 3 },
+        purchase_price: { type: 'number', example: 2.90 },
+        waste_percent: { type: 'number', example: 12 },
+        supplier: { type: 'string', example: 'Alpro', nullable: true },
+        stock: { type: 'number', example: 5 }
       },
       required: []
     }

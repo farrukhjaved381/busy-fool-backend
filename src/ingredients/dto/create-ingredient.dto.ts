@@ -7,8 +7,13 @@ export class CreateIngredientDto {
   name: string;
 
   @IsString()
-  @ApiProperty({ description: 'Unit of measurement (e.g., 2L carton, 1kg bag)', example: '2L carton' })
+  @ApiProperty({ description: 'Unit of measurement (e.g., kg, L, unit)', example: 'L' })
   unit: string;
+
+  @IsNumber()
+  @Min(0.01)
+  @ApiProperty({ description: 'Quantity of the ingredient', example: 2 })
+  quantity: number;
 
   @IsNumber()
   @Min(0)

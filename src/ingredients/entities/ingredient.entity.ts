@@ -12,10 +12,16 @@ export class Ingredient {
   unit: string;
 
   @Column({ type: 'decimal', precision: 10, scale: 2 })
+  quantity: number;
+
+  @Column({ type: 'decimal', precision: 10, scale: 2 })
   purchase_price: number;
 
   @Column({ type: 'decimal', precision: 5, scale: 2 })
   waste_percent: number;
+
+  @Column({ type: 'integer', default: 0 })
+  stock: number;
 
   @Column({ type: 'float', nullable: true })
   cost_per_ml: number | null;

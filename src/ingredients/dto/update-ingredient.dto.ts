@@ -20,4 +20,16 @@ export class UpdateIngredientDto extends PartialType(CreateIngredientDto) {
   @IsOptional()
   @ApiProperty({ description: 'New supplier name', example: 'Alpro', required: false })
   supplier?: string;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  @ApiProperty({ description: 'New quantity of the ingredient', example: 3, required: false })
+  quantity?: number;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  @ApiProperty({ description: 'New stock quantity', example: 5, required: false })
+  stock?: number;
 }
