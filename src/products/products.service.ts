@@ -78,6 +78,7 @@ export class ProductsService {
    * @returns List of products
    */
   async findAll(): Promise<Product[]> {
+    console.log('Fetching all products'); // Debug log
     return this.productsRepository.find({ relations: ['ingredients', 'ingredients.ingredient'] });
   }
 
@@ -88,6 +89,7 @@ export class ProductsService {
    * @throws NotFoundException if product is not found
    */
   async findOne(id: string): Promise<Product> {
+    console.log('Finding product with ID:', id); // Debug log
     const product = await this.productsRepository.findOne({ where: { id }, relations: ['ingredients', 'ingredients.ingredient'] });
     if (!product) throw new NotFoundException(`Product with ID ${id} not found`);
     return product;
@@ -178,42 +180,6 @@ export class ProductsService {
       });
     }
     return results;
-  }
-
-  /**
-   * Generates dashboard data for a given date range.
-   * @param startDate Start of the range
-   * @param endDate End of the range
-   * @returns Dashboard metrics
-   * @throws BadRequestException if date range is invalid
-   */
-  async getDashboard(startDate: Date, endDate: Date): Promise<any> {
-    const products = await this.findAll();
-    const revenue = products.reduce((sum, p) => sum + (p.sell_price || 0), 0);
-    const costs = products.reduce((sum, p) => sum + (p.total_cost || 0), 0);
-    const profit = revenue - costs;
-    const losingMoney = products
-      .filter(p => p.status === 'losing money')
-      .map(p => ({ name: p.name, margin_amount: p.margin_amount || 0 }));
-    const winners = products
-      .filter(p => p.status === 'profitable')
-      .sort((a, b) => (b.margin_amount || 0) - (a.margin_amount || 0))
-      .slice(0, 3)
-      .map(p => ({ name: p.name, margin_amount: p.margin_amount || 0 }));
-    const quickWins = losingMoney.map(p => ({
-      name: p.name,
-      suggestion: `Raise price by £${(Math.abs(p.margin_amount) + 0.50).toFixed(2)}`,
-    }));
-
-    return {
-      revenue: revenue.toFixed(2),
-      costs: costs.toFixed(2),
-      profit: profit.toFixed(2),
-      profitMargin: revenue > 0 ? ((profit / revenue) * 100).toFixed(2) : '0.00',
-      losingMoney,
-      winners,
-      quickWins,
-    };
   }
 
   /**

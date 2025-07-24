@@ -29,7 +29,17 @@ export class IngredientsService {
   ) {}
 
   async create(createIngredientDto: CreateIngredientDto): Promise<Ingredient> {
-    const ingredient = this.ingredientRepository.create(createIngredientDto);
+    const { cost_per_ml, cost_per_gram, cost_per_unit } = this.calculateCosts(
+      createIngredientDto.purchase_price,
+      createIngredientDto.waste_percent,
+      createIngredientDto.unit
+    );
+    const ingredient = this.ingredientRepository.create({
+      ...createIngredientDto,
+      cost_per_ml,
+      cost_per_gram,
+      cost_per_unit,
+    });
     return this.ingredientRepository.save(ingredient);
   }
 
@@ -37,7 +47,19 @@ export class IngredientsService {
     if (!createIngredientDtos.length) {
       throw new BadRequestException('No ingredients provided');
     }
-    const ingredients = createIngredientDtos.map(dto => this.ingredientRepository.create(dto));
+    const ingredients = createIngredientDtos.map(dto => {
+      const { cost_per_ml, cost_per_gram, cost_per_unit } = this.calculateCosts(
+        dto.purchase_price,
+        dto.waste_percent,
+        dto.unit
+      );
+      return this.ingredientRepository.create({
+        ...dto,
+        cost_per_ml,
+        cost_per_gram,
+        cost_per_unit,
+      });
+    });
     return this.ingredientRepository.save(ingredients);
   }
 
@@ -93,7 +115,7 @@ export class IngredientsService {
         let similarity = this.calculateSimilarity(normalizedHeader, normalizedField);
         const distance = this.levenshteinDistance(normalizedHeader, normalizedField);
         if (distance <= 2 && this.requiredFields.includes(field)) {
-          similarity += 0.4; // Increased boost to 0.3 for required fields
+          similarity += 0.4;
         }
         if (similarity > maxSimilarity) {
           maxSimilarity = similarity;
@@ -141,7 +163,7 @@ export class IngredientsService {
           let similarity = this.calculateSimilarity(header.toLowerCase().replace(/^(my_|my|_full(name)?)$/, ''), field.toLowerCase());
           const distance = this.levenshteinDistance(header.toLowerCase(), field.toLowerCase());
           if (distance <= 2 && this.requiredFields.includes(field)) {
-            similarity += 0.4; // Increased boost to 0.3
+            similarity += 0.4;
           }
           if (
             (similarity > maxSimilarity && this.isValidMapping(header, field)) ||
@@ -194,7 +216,7 @@ export class IngredientsService {
     const headerTokens = header.toLowerCase().split(/[_ ]/).filter(t => t);
     const fieldType = this.fieldTypes[field];
     return !(fieldType === 'number' && !headerTokens.some(t => ['price', 'cost', 'percent'].includes(t))) &&
-           !(fieldType === 'string' && headerTokens.some(t => ['price', 'cost', 'percent'].includes(t)));
+      !(fieldType === 'string' && headerTokens.some(t => ['price', 'cost', 'percent'].includes(t)));
   }
 
   private levenshteinDistance(s1: string, s2: string): number {
@@ -229,18 +251,18 @@ export class IngredientsService {
     if (!mapping && !defaultMapping) {
       throw new BadRequestException('Mapping object is required to map CSV columns to database fields. See /validate-csv for suggestions.');
     }
-
+  
     if (!fs.existsSync(file.path)) {
       throw new BadRequestException('Uploaded file not found on server');
     }
-
+  
     const usedMapping = mapping || defaultMapping!;
     const results: Ingredient[] = [];
     const unmappedColumns: string[] = [];
-    let dataRows = 0;
+    let dataRows = 0; // Will count data rows only
     const errors: string[] = [];
     const processedMappings: Record<string, string> = {};
-
+  
     const missingRequired = this.requiredFields.filter(f => !Object.values(usedMapping).some(v => v === f));
     if (missingRequired.length > 0) {
       throw new BadRequestException(`Missing required field mappings: ${missingRequired.join(', ')}. Consider using suggested mappings with 'undefined' for optional fields.`);
@@ -249,14 +271,16 @@ export class IngredientsService {
     if (invalidMappings.length > 0) {
       throw new BadRequestException(`Invalid field mappings: ${invalidMappings.map(([h, f]) => `${h} → ${f}`).join(', ')}`);
     }
-
+  
     const headers = await this.extractHeaders(file.path);
-
+    console.log('Extracted headers:', headers); // Debug log
+  
     const parser = fs.createReadStream(file.path)
       .pipe(csv.parse({ columns: true, trim: true, skip_empty_lines: true }));
     for await (const row of parser) {
-      dataRows++;
-      if (dataRows === 1) continue;
+      if (Object.keys(row).length === 0) continue; // Skip empty rows
+      dataRows++; // Increment for each data row
+      console.log(`Processing data row ${dataRows}:`, row);
       try {
         const createDto: CreateIngredientDto = {
           name: 'Unknown',
@@ -268,7 +292,7 @@ export class IngredientsService {
           cost_per_unit: undefined,
           supplier: undefined,
         };
-
+  
         for (const header of headers) {
           const mappedField = usedMapping[header];
           processedMappings[header] = mappedField || 'undefined';
@@ -312,19 +336,39 @@ export class IngredientsService {
               break;
           }
         }
-
+  
+        // Calculate costs based on unit and waste
         const ingredient = this.ingredientRepository.create(createDto);
-        results.push(await this.ingredientRepository.save(ingredient));
+        const { cost_per_ml, cost_per_gram, cost_per_unit } = this.calculateCosts(
+          createDto.purchase_price,
+          createDto.waste_percent,
+          createDto.unit
+        );
+        ingredient.cost_per_ml = cost_per_ml ?? null; // Use null for undefined values
+        ingredient.cost_per_gram = cost_per_gram ?? null;
+        ingredient.cost_per_unit = cost_per_unit ?? null;
+  
+        // Check for existing ingredient by name and unit
+        const existingIngredient = await this.ingredientRepository.findOne({
+          where: { name: createDto.name, unit: createDto.unit },
+        });
+  
+        if (existingIngredient) {
+          Object.assign(existingIngredient, ingredient);
+          results.push(await this.ingredientRepository.save(existingIngredient));
+        } else {
+          results.push(await this.ingredientRepository.save(ingredient));
+        }
       } catch (error) {
         errors.push(`Row ${dataRows}: ${error.message} (Details: ${JSON.stringify(row)})`);
       }
     }
-
+  
     await fs.promises.unlink(file.path);
     return {
       importedIngredients: results,
       summary: {
-        totalRows: dataRows,
+        totalRows: dataRows + 1, // Add 1 for the header row
         successfullyImported: results.length,
         errors,
         unmappedColumns,
@@ -348,12 +392,61 @@ export class IngredientsService {
 
   async update(id: string, updateIngredientDto: UpdateIngredientDto): Promise<Ingredient> {
     const ingredient = await this.findOne(id);
-    Object.assign(ingredient, updateIngredientDto);
+    const { cost_per_ml, cost_per_gram, cost_per_unit } = this.calculateCosts(
+      updateIngredientDto.purchase_price || 0,
+      updateIngredientDto.waste_percent || 0,
+      updateIngredientDto.unit || ingredient.unit
+    );
+    Object.assign(ingredient, updateIngredientDto, {
+      cost_per_ml,
+      cost_per_gram,
+      cost_per_unit,
+    });
     return this.ingredientRepository.save(ingredient);
   }
 
   async remove(id: string): Promise<void> {
     const ingredient = await this.findOne(id);
     await this.ingredientRepository.remove(ingredient);
+  }
+
+  public calculateCosts(purchase_price: number, waste_percent: number, unit: string): {
+    cost_per_ml: number | undefined;
+    cost_per_gram: number | undefined;
+    cost_per_unit: number | undefined;
+  } {
+    const usablePercentage = 1 - (waste_percent / 100);
+    if (usablePercentage <= 0) {
+      throw new BadRequestException('Waste percent results in zero or negative usable quantity.');
+    }
+
+    let totalQuantity = 0;
+    let isMilliliters = false;
+    let isGrams = false;
+    let isUnits = false;
+
+    if (unit.toLowerCase().includes('ml') || unit.toLowerCase().includes('l')) {
+      totalQuantity = unit.toLowerCase().includes('l') ? 1000 : parseFloat(unit); // Convert liters to ml
+      isMilliliters = true;
+    } else if (unit.toLowerCase().includes('g') || unit.toLowerCase().includes('kg')) {
+      totalQuantity = unit.toLowerCase().includes('kg') ? 1000 : parseFloat(unit); // Convert kg to g
+      isGrams = true;
+    } else if (unit.toLowerCase().includes('unit')) {
+      totalQuantity = parseFloat(unit.replace(/unit/i, '').trim()) || 1; // Default to 1 unit if not specified
+      isUnits = true;
+    } else {
+      throw new BadRequestException('Unsupported unit. Use ml, L, g, kg, or unit.');
+    }
+
+    const usableQuantity = totalQuantity * usablePercentage;
+    const cost_per_ml = isMilliliters ? (purchase_price / usableQuantity) : undefined;
+    const cost_per_gram = isGrams ? (purchase_price / usableQuantity) : undefined;
+    const cost_per_unit = isUnits ? (purchase_price / usableQuantity) : undefined;
+
+    return {
+      cost_per_ml: cost_per_ml !== undefined ? Number(cost_per_ml.toFixed(4)) : undefined,
+      cost_per_gram: cost_per_gram !== undefined ? Number(cost_per_gram.toFixed(4)) : undefined,
+      cost_per_unit: cost_per_unit !== undefined ? Number(cost_per_unit.toFixed(4)) : undefined,
+    };
   }
 }

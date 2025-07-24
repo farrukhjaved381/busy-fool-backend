@@ -14,7 +14,8 @@ import { Ingredient } from './ingredients/entities/ingredient.entity';
 import { Product } from './products/entities/product.entity';
 import { ProductIngredient } from './products/entities/product-ingredient.entity';
 import { Sale } from './sales/entities/sale.entity';
-import { Purchase } from './purchases/entities/purchase.entity';
+
+import { AnalyticsModule } from './analytics/analytics.module';
 
 @Module({
   imports: [
@@ -31,8 +32,9 @@ import { Purchase } from './purchases/entities/purchase.entity';
         username: configService.get('DB_USER'),
         password: configService.get('DB_PASSWORD'),
         database: configService.get('DB_NAME'),
-        entities: [User, Ingredient, Product, ProductIngredient, Sale, Purchase],
-        synchronize: true, // Set to false in production
+        entities: ['dist/**/*.entity.js'], // Use compiled output
+        synchronize: false,
+        logging: true,
       }),
       inject: [ConfigService],
     }),
@@ -42,6 +44,7 @@ import { Purchase } from './purchases/entities/purchase.entity';
     ProductsModule,
     SalesModule,
     PurchasesModule,
+    AnalyticsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -139,7 +139,6 @@ export class IngredientsController {
         mapping: {
           type: 'string',
           description: 'User-defined column mappings as a JSON string (e.g., {"name":"name"}) based on validate-csv response',
-          // 'required' should be at the parent object level, not here
         },
       },
     },

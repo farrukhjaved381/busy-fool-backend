@@ -1,0 +1,6 @@
+name,unit,purchase_price,waste_percent,cost_per_ml,cost_per_gram,cost_per_unit,supplier
+Pure Milk,1Litre,120,10,0.1333,0,0,Ahmad
+Sugar,1kg,100,2,0,0.102,0,Ahmad
+Cream ,1Litre,120,10,0.1333,0,0,Ahmad
+Tea pack,1kg bag,100,2,0,0.102,0,Ahmad
+Beans,1kg,2000,5,0,2.1053,0,Ahmad

@@ -1,37 +1,34 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
 
 @Entity()
 export class Ingredient {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'varchar', nullable: false })
+  @Column({ length: 100 })
   name: string;
 
-  @Column({ type: 'varchar', nullable: false })
+  @Column({ length: 50 })
   unit: string;
 
-  @Column('decimal', { precision: 10, scale: 2, nullable: true })
+  @Column({ type: 'decimal', precision: 10, scale: 2 })
   purchase_price: number;
 
-  @Column('decimal', { precision: 5, scale: 2, nullable: true })
+  @Column({ type: 'decimal', precision: 5, scale: 2 })
   waste_percent: number;
 
-  @Column('decimal', { precision: 10, scale: 6, nullable: true })
-  cost_per_ml: number;
+  @Column({ type: 'float', nullable: true })
+  cost_per_ml: number | null;
 
-  @Column('decimal', { precision: 10, scale: 6, nullable: true })
-  cost_per_gram: number;
+  @Column({ type: 'float', nullable: true })
+  cost_per_gram: number | null;
 
-  @Column('decimal', { precision: 10, scale: 2, nullable: true })
-  cost_per_unit: number;
+  @Column({ type: 'float', nullable: true })
+  cost_per_unit: number | null;
 
-  @Column({ type: 'varchar', nullable: true })
+  @Column({ length: 100, nullable: true })
   supplier: string;
 
-  @CreateDateColumn()
+  @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
   created_at: Date;
-
-  @UpdateDateColumn()
-  last_updated: Date;
 }

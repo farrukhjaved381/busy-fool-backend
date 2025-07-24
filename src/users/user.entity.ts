@@ -1,5 +1,5 @@
 // src/users/user.entity.ts
-import { Entity, PrimaryGeneratedColumn, Column, BeforeInsert , CreateDateColumn, UpdateDateColumn} from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, BeforeInsert, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { ApiProperty } from '@nestjs/swagger';
 

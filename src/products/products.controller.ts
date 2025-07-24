@@ -7,9 +7,8 @@ import {
   Param, 
   Delete, 
   UseGuards, 
-  BadRequestException,
-  Query, 
   HttpCode, 
+  BadRequestException,
   HttpStatus 
 } from '@nestjs/common';
 import { ProductsService } from './products.service';
@@ -18,7 +17,7 @@ import { UpdateProductDto } from './dto/update-product.dto';
 import { WhatIfDto } from './dto/what-if.dto';
 import { MilkSwapDto } from './dto/milk-swap.dto';
 import { QuickActionDto } from './dto/quick-action.dto';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery, ApiBody } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
 import { Product } from './entities/product.entity';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -227,53 +226,6 @@ export class ProductsController {
   @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: 'Invalid input data.' })
   async whatIf(@Body() whatIfDto: WhatIfDto): Promise<{ productId: string; newMargin: number; newStatus: string }[]> {
     return this.productsService.whatIf(whatIfDto);
-  }
-
-  @Get('dashboard')
-  @Roles(UserRole.OWNER)
-  @ApiOperation({ summary: 'Get reality check dashboard data', description: 'Provides financial insights for a given date range.' })
-  @ApiQuery({ name: 'startDate', type: String, required: true, description: 'Start date (YYYY-MM-DD)', example: '2025-07-01' })
-  @ApiQuery({ name: 'endDate', type: String, required: true, description: 'End date (YYYY-MM-DD)', example: '2025-07-23' })
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: 'Successfully retrieved dashboard data.',
-    schema: {
-      type: 'object',
-      properties: {
-        revenue: { type: 'string', example: '100.00' },
-        costs: { type: 'string', example: '60.00' },
-        profit: { type: 'string', example: '40.00' },
-        profitMargin: { type: 'string', example: '40.00' },
-        losingMoney: {
-          type: 'array',
-          items: { type: 'object', properties: { name: { type: 'string', example: 'Lossy Product' }, margin_amount: { type: 'number', example: -5.00 } } },
-        },
-        winners: {
-          type: 'array',
-          items: { type: 'object', properties: { name: { type: 'string', example: 'Winner Product' }, margin_amount: { type: 'number', example: 10.00 } } },
-        },
-        quickWins: {
-          type: 'array',
-          items: { type: 'object', properties: { name: { type: 'string', example: 'Lossy Product' }, suggestion: { type: 'string', example: 'Raise price by £5.50' } } },
-        },
-      },
-      example: {
-        revenue: '100.00',
-        costs: '60.00',
-        profit: '40.00',
-        profitMargin: '40.00',
-        losingMoney: [{ name: 'Lossy Product', margin_amount: -5.00 }],
-        winners: [{ name: 'Winner Product', margin_amount: 10.00 }],
-        quickWins: [{ name: 'Lossy Product', suggestion: 'Raise price by £5.50' }],
-      },
-    },
-  })
-  @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: 'Invalid date range.' })
-  async getDashboard(@Query('startDate') startDate: string, @Query('endDate') endDate: string): Promise<any> {
-    if (!startDate || !endDate || new Date(startDate) > new Date(endDate)) {
-      throw new BadRequestException('Invalid date range');
-    }
-    return this.productsService.getDashboard(new Date(startDate), new Date(endDate));
   }
 
   @Post('milk-swap')

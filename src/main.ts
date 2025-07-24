@@ -2,7 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ValidationPipe } from '@nestjs/common';
-import { FileInterceptor, NestExpressApplication } from '@nestjs/platform-express';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import * as path from 'path';
 import * as multer from 'multer';
 import * as fs from 'fs';
@@ -39,14 +39,12 @@ async function bootstrap() {
     },
   });
   const upload = multer({ storage });
-  
 
   // Serve static files from uploads directory
   app.useStaticAssets(uploadDir, { prefix: '/uploads' });
 
   // Enable CORS
   app.enableCors();
-
   await app.listen(3000);
   console.log(`Application is running on: http://localhost:3000`);
   console.log(`Swagger UI is available at: http://localhost:3000/api`);

@@ -1,6 +1,7 @@
 {
   "name": "busy-fool",
   "version": "0.0.1",
+  "type": "commonjs",
   "description": "",
   "author": "",
   "private": true,
@@ -20,9 +21,9 @@
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
   "dependencies": {
-    "@nestjs/common": "^11.0.1",
+    "@nestjs/common": "^11.1.5",
     "@nestjs/config": "^4.0.2",
-    "@nestjs/core": "^11.0.1",
+    "@nestjs/core": "^11.1.5",
     "@nestjs/jwt": "^11.0.0",
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^11.1.5",
@@ -32,6 +33,7 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.2",
     "csv-parse": "^5.0.0",
+    "dotenv": "^17.2.0",
     "multer": "^2.0.2",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
@@ -51,6 +53,7 @@
     "@swc/cli": "^0.6.0",
     "@swc/core": "^1.10.7",
     "@types/bcrypt": "^6.0.0",
+    "@types/connect": "^3.4.38",
     "@types/express": "^5.0.3",
     "@types/jest": "^29.5.14",
     "@types/multer": "^2.0.0",
