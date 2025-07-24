@@ -20,7 +20,10 @@ async function bootstrap() {
     .setVersion('1.0')
     .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }, 'JWT')
     .build();
-  const document = SwaggerModule.createDocument(app, config);
+  const document = SwaggerModule.createDocument(app, config, {
+    deepScanRoutes: true,
+    extraModels: [], // Add models if needed
+  });
   SwaggerModule.setup('api', app, document, {
     swaggerOptions: { persistAuthorization: true },
   });
