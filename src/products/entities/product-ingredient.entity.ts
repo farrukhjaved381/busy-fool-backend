@@ -1,35 +1,43 @@
-import { Column, Entity, PrimaryGeneratedColumn, ManyToOne } from 'typeorm';
-import { ApiProperty } from '@nestjs/swagger';
-import { Product } from './product.entity';
-import { Ingredient } from '../../ingredients/entities/ingredient.entity';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn } from 'typeorm';
+  import { Product } from './product.entity';
+  import { Ingredient } from '../../ingredients/entities/ingredient.entity';
+  import { ApiProperty } from '@nestjs/swagger';
 
-@Entity()
-export class ProductIngredient {
-  @PrimaryGeneratedColumn('uuid')
-  @ApiProperty({ description: 'Unique identifier for the product-ingredient relation' })
-  id: string;
+  @Entity()
+  export class ProductIngredient {
+    @PrimaryGeneratedColumn('uuid')
+    @ApiProperty({ description: 'Unique identifier for the product-ingredient relation', example: '123e4567-e89b-12d3-a456-426614174000' })
+    id: string;
 
-  @ManyToOne(() => Product, (product) => product.ingredients)
-  @ApiProperty({ description: 'Associated product', type: () => Product })
-  product: Product;
+    @ManyToOne(() => Product, product => product.ingredients)
+    @JoinColumn()
+    @ApiProperty({ description: 'Associated product', type: () => Product })
+    product: Product;
 
-  @ManyToOne(() => Ingredient)
-  @ApiProperty({ description: 'Associated ingredient', type: () => Ingredient })
-  ingredient: Ingredient;
+    @ManyToOne(() => Ingredient, ingredient => ingredient.productIngredients)
+    @JoinColumn()
+    @ApiProperty({ description: 'Associated ingredient', type: () => Ingredient })
+    ingredient: Ingredient;
 
-  @Column('decimal', { precision: 10, scale: 2 })
-  @ApiProperty({ description: 'Quantity of the ingredient used', example: 200 })
-  quantity: number;
+    @Column({ type: 'decimal', precision: 10, scale: 2, nullable: false })
+    @ApiProperty({ description: 'Quantity used', example: 50, minimum: 0.01 })
+    quantity: number;
 
-  @Column()
-  @ApiProperty({ description: 'Unit of measurement (e.g., ml, g)', example: 'ml' })
-  unit: string;
+    @Column({ length: 50, nullable: false })
+    @ApiProperty({ description: 'Unit of measurement', example: 'ml', minLength: 1, maxLength: 50 })
+    unit: string;
 
-  @Column('decimal', { precision: 10, scale: 2 })
-  @ApiProperty({ description: 'Cost of this ingredient for the product', example: 1.00 })
-  line_cost: number;
+    @Column({ type: 'decimal', precision: 10, scale: 2, nullable: false })
+    @ApiProperty({ description: 'Line cost', example: 0.42, minimum: 0 })
+    line_cost: number;
 
-  @Column({ default: false })
-  @ApiProperty({ description: 'Whether the ingredient is optional', example: false })
-  is_optional: boolean;
-}
+    @Column({ default: false })
+    @ApiProperty({ description: 'Whether the ingredient is optional', example: false })
+    is_optional: boolean;
+
+    @ApiProperty({ description: 'Ingredient name', example: 'Oat Milk', readOnly: true })
+    name: string;
+
+    @ApiProperty({ description: 'Waste-adjusted cost per unit', example: 0.0084, readOnly: true })
+    cost_per_unit: number;
+  }

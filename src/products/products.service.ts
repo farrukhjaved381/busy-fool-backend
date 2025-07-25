@@ -11,6 +11,7 @@ import { QuickActionDto } from './dto/quick-action.dto';
 import { IngredientsService } from '../ingredients/ingredients.service';
 import { Ingredient } from '../ingredients/entities/ingredient.entity';
 import { ApiProperty } from '@nestjs/swagger';
+import { Stock } from '../stock/entities/stock.entity';
 
 /**
  * Service to manage product-related operations including creation, updates, and analytics.
@@ -23,6 +24,8 @@ export class ProductsService {
     @InjectRepository(ProductIngredient)
     private productIngredientsRepository: Repository<ProductIngredient>,
     private ingredientsService: IngredientsService,
+    @InjectRepository(Stock)
+    private stockRepository: Repository<Stock>,
   ) {}
 
   /**
@@ -46,14 +49,25 @@ export class ProductsService {
       const ingredient = await this.ingredientsService.findOne(ingredientDto.ingredientId);
       if (!ingredient) throw new BadRequestException(`Ingredient ${ingredientDto.ingredientId} not found`);
 
-      const lineCost = this.calculateLineCost(ingredient, ingredientDto.quantity, ingredientDto.unit);
+      const trueCost = this.calculateTrueCost(ingredient, ingredientDto.unit);
+      const lineCost = ingredientDto.quantity * trueCost;
       totalCost += lineCost;
 
+      const stock = await this.getAvailableStock(ingredient, ingredientDto.unit, ingredientDto.quantity);
+      if (!stock) {
+        throw new BadRequestException(`No available stock for ingredient ${ingredientDto.ingredientId} and unit ${ingredientDto.unit}.`);
+      }
+      stock.remaining_quantity -= this.convertQuantity(ingredientDto.quantity, ingredientDto.unit, stock.unit);
+      await this.updateStock(stock);
+
       const productIngredient = this.productIngredientsRepository.create({
+        ingredient,
         quantity: ingredientDto.quantity,
         unit: ingredientDto.unit,
         line_cost: lineCost,
         is_optional: ingredientDto.is_optional || false,
+        name: ingredient.name,
+        cost_per_unit: trueCost,
       });
       productIngredients.push(productIngredient);
     }
@@ -69,7 +83,15 @@ export class ProductsService {
       ingredients: productIngredients,
     });
 
-    return this.productsRepository.save(product);
+    const savedProduct = await this.productsRepository.save(product);
+
+    // Link product ingredients to the saved product
+    for (const productIngredient of productIngredients) {
+      productIngredient.product = savedProduct;
+      await this.productIngredientsRepository.save(productIngredient);
+    }
+
+    return savedProduct;
   }
 
   /**
@@ -271,5 +293,113 @@ export class ProductsService {
     if (marginAmount > 0) return 'profitable';
     if (marginAmount === 0) return 'breaking even';
     return 'losing money';
+  }
+
+  private calculateTrueCost(ingredient: Ingredient, unit: string): number {
+    const wastePercent = ingredient.waste_percent || 0;
+    if (wastePercent < 0 || wastePercent > 100) {
+      throw new BadRequestException('Waste percentage must be between 0 and 100');
+    }
+    const usablePercentage = 1 - (wastePercent / 100);
+    if (usablePercentage <= 0) {
+      throw new BadRequestException('Waste percent results in zero or negative usable quantity');
+    }
+
+    let baseCost = 0;
+    if (unit.toLowerCase().includes('ml') || unit.toLowerCase().includes('l')) {
+      baseCost = ingredient.cost_per_ml || 0;
+    } else if (unit.toLowerCase().includes('g') || unit.toLowerCase().includes('kg')) {
+      baseCost = ingredient.cost_per_gram || 0;
+    } else if (unit.toLowerCase().includes('unit')) {
+      baseCost = ingredient.cost_per_unit || 0;
+    } else {
+      throw new BadRequestException('Unsupported unit. Use ml, L, g, kg, or unit');
+    }
+    return baseCost / usablePercentage;
+  }
+
+  /**
+   * Retrieves the latest available stock batch for an ingredient with unit conversion.
+   * @param ingredient Ingredient data
+   * @param requestedUnit Unit requested by the product
+   * @param requestedQuantity Quantity requested
+   * @returns The stock batch with sufficient remaining quantity
+   * @throws NotFoundException if no suitable stock is found
+   */
+  private async getAvailableStock(ingredient: Ingredient, requestedUnit: string, requestedQuantity: number): Promise<Stock> {
+    console.log(`Checking stock for ingredient ${ingredient.id}, requested: ${requestedQuantity} ${requestedUnit}`);
+    const ingredientWithStocks = await this.ingredientsService.findOne(ingredient.id); // Fetch ingredient
+    const stocks = await this.stockRepository.find({ where: { ingredient: { id: ingredient.id } } }); // Fetch stocks manually
+    console.log(`Stocks found:`, stocks);
+    for (const stock of stocks) {
+      console.log(`Evaluating stock ${stock.id}: remaining ${stock.remaining_quantity} ${stock.unit}`);
+      if (this.isCompatibleUnit(requestedUnit, stock.unit)) {
+        const requestedInStockUnit = this.convertQuantity(requestedQuantity, requestedUnit, stock.unit);
+        console.log(`Converted request: ${requestedQuantity} ${requestedUnit} = ${requestedInStockUnit} ${stock.unit}`);
+        if (stock.remaining_quantity >= requestedInStockUnit) {
+          console.log(`Stock ${stock.id} is sufficient`);
+          return stock;
+        } else {
+          console.log(`Stock ${stock.id} insufficient: ${stock.remaining_quantity} < ${requestedInStockUnit}`);
+        }
+      } else {
+        console.log(`Units ${requestedUnit} and ${stock.unit} are incompatible`);
+      }
+    }
+    console.log(`No suitable stock found for ${ingredient.id}`);
+    throw new BadRequestException('No available stock for this ingredient and unit.');
+  }
+
+  /**
+   * Updates a stock batch with new remaining quantity.
+   * @param stock Stock batch to update
+   * @returns Updated stock
+   */
+  private async updateStock(stock: Stock): Promise<Stock> {
+    return this.stockRepository.save(stock);
+  }
+
+  /**
+   * Converts a quantity between compatible units.
+   * @param quantity Quantity to convert
+   * @param fromUnit Source unit
+   * @param toUnit Target unit
+   * @returns Converted quantity
+   * @throws BadRequestException if units are incompatible
+   */
+  private convertQuantity(quantity: number, fromUnit: string, toUnit: string): number {
+    const fromLower = fromUnit.toLowerCase();
+    const toLower = toUnit.toLowerCase();
+
+    if (fromLower === toLower) return quantity;
+
+    if (fromLower === 'ml' && toLower === 'l') {
+      return quantity / 1000; // ml to L
+    } else if (fromLower === 'l' && toLower === 'ml') {
+      return quantity * 1000; // L to ml
+    } else if (fromLower === 'g' && toLower === 'kg') {
+      return quantity / 1000; // g to kg
+    } else if (fromLower === 'kg' && toLower === 'g') {
+      return quantity * 1000; // kg to g
+    } else if (fromLower.includes('unit') && toLower.includes('unit')) {
+      return quantity;
+    } else {
+      throw new BadRequestException(`Incompatible units: ${fromUnit} and ${toUnit}`);
+    }
+  }
+
+  /**
+   * Checks if two units are compatible for conversion.
+   * @param unit1 First unit
+   * @param unit2 Second unit
+   * @returns Boolean indicating compatibility
+   */
+  private isCompatibleUnit(unit1: string, unit2: string): boolean {
+    const u1 = unit1.toLowerCase();
+    const u2 = unit2.toLowerCase();
+    return u1 === u2 || // Same unit (case-insensitive)
+           (u1 === 'l' && u2 === 'ml') || (u1 === 'ml' && u2 === 'l') ||
+           (u1 === 'kg' && u2 === 'g') || (u1 === 'g' && u2 === 'kg') ||
+           (u1.includes('unit') && u2.includes('unit'));
   }
 }

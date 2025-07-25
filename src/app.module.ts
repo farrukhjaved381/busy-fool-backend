@@ -14,7 +14,7 @@ import { Ingredient } from './ingredients/entities/ingredient.entity';
 import { Product } from './products/entities/product.entity';
 import { ProductIngredient } from './products/entities/product-ingredient.entity';
 import { Sale } from './sales/entities/sale.entity';
-
+import { StockModule } from './stock/stock.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 
 @Module({
@@ -45,6 +45,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
     SalesModule,
     PurchasesModule,
     AnalyticsModule,
+    StockModule,
   ],
   controllers: [AppController],
   providers: [AppService],

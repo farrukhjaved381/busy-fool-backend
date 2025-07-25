@@ -7,7 +7,12 @@ import { Ingredient } from './entities/ingredient.entity';
 import * as csv from 'csv-parse';
 import * as fs from 'fs';
 import * as path from 'path';
+import { Stock } from '../stock/entities/stock.entity';
+import { ApiProperty } from '@nestjs/swagger';
 
+/**
+ * Service to manage ingredient-related operations including creation, updates, and CSV import.
+ */
 @Injectable()
 export class IngredientsService {
   private readonly expectedFields: string[] = ['name', 'unit', 'quantity', 'purchase_price', 'waste_percent', 'cost_per_ml', 'cost_per_gram', 'cost_per_unit', 'supplier', 'stock'];
@@ -28,53 +33,108 @@ export class IngredientsService {
   constructor(
     @InjectRepository(Ingredient)
     private readonly ingredientRepository: Repository<Ingredient>,
+    @InjectRepository(Stock)
+    private readonly stockRepository: Repository<Stock>,
   ) {}
 
+  /**
+   * Creates a new ingredient with an initial stock batch.
+   * @param createIngredientDto Data for the new ingredient
+   * @returns The created ingredient
+   * @throws BadRequestException if quantity is invalid or waste percent is out of range
+   */
   async create(createIngredientDto: CreateIngredientDto): Promise<Ingredient> {
     if (!createIngredientDto.quantity || createIngredientDto.quantity <= 0) {
       throw new BadRequestException('Quantity must be a positive number');
     }
+    if (createIngredientDto.waste_percent && (createIngredientDto.waste_percent < 0 || createIngredientDto.waste_percent > 100)) {
+      throw new BadRequestException('Waste percentage must be between 0 and 100');
+    }
+
+    const ingredient = this.ingredientRepository.create(createIngredientDto);
+    const savedIngredient = await this.ingredientRepository.save(ingredient);
+
+    const usablePercentage = 1 - (createIngredientDto.waste_percent || 0) / 100;
+    const purchasedQuantity = createIngredientDto.quantity;
+    const remainingQuantity = purchasedQuantity * usablePercentage;
+
+    const stock = this.stockRepository.create({
+      ingredient: savedIngredient,
+      purchased_quantity: purchasedQuantity,
+      unit: createIngredientDto.unit,
+      purchase_price: createIngredientDto.purchase_price,
+      waste_percent: createIngredientDto.waste_percent || 0,
+      remaining_quantity: remainingQuantity,
+      wasted_quantity: 0,
+    });
+    await this.stockRepository.save(stock);
+
     const { cost_per_ml, cost_per_gram, cost_per_unit } = this.calculateCosts(
       createIngredientDto.purchase_price,
-      createIngredientDto.waste_percent,
+      createIngredientDto.waste_percent || 0,
       createIngredientDto.unit,
       createIngredientDto.quantity
     );
-    const ingredient = this.ingredientRepository.create({
-      ...createIngredientDto,
-      cost_per_ml,
-      cost_per_gram,
-      cost_per_unit,
-      stock: createIngredientDto.quantity, // Initialize stock to quantity
-    });
-    return this.ingredientRepository.save(ingredient);
+    savedIngredient.cost_per_ml = cost_per_ml ?? null;
+    savedIngredient.cost_per_gram = cost_per_gram ?? null;
+    savedIngredient.cost_per_unit = cost_per_unit ?? null;
+    return this.ingredientRepository.save(savedIngredient);
   }
 
+  /**
+   * Creates multiple ingredients with initial stock batches.
+   * @param createIngredientDtos Array of ingredient data
+   * @returns Array of created ingredients
+   * @throws BadRequestException if no ingredients are provided or quantity is invalid
+   */
   async bulkCreate(createIngredientDtos: CreateIngredientDto[]): Promise<Ingredient[]> {
     if (!createIngredientDtos.length) {
       throw new BadRequestException('No ingredients provided');
     }
-    const ingredients = createIngredientDtos.map(dto => {
+    const ingredients = [];
+    for (const dto of createIngredientDtos) {
       if (!dto.quantity || dto.quantity <= 0) {
         throw new BadRequestException('Quantity must be a positive number');
       }
+      if (dto.waste_percent && (dto.waste_percent < 0 || dto.waste_percent > 100)) {
+        throw new BadRequestException('Waste percentage must be between 0 and 100');
+      }
+      const ingredient = this.ingredientRepository.create(dto);
+      const savedIngredient = await this.ingredientRepository.save(ingredient);
+
+      const usablePercentage = 1 - (dto.waste_percent || 0) / 100;
+      const remainingQuantity = dto.quantity * usablePercentage;
+      const stock = this.stockRepository.create({
+        ingredient: savedIngredient,
+        purchased_quantity: dto.quantity,
+        unit: dto.unit,
+        purchase_price: dto.purchase_price,
+        waste_percent: dto.waste_percent || 0,
+        remaining_quantity: remainingQuantity,
+        wasted_quantity: 0,
+      });
+      await this.stockRepository.save(stock);
+
       const { cost_per_ml, cost_per_gram, cost_per_unit } = this.calculateCosts(
         dto.purchase_price,
-        dto.waste_percent,
+        dto.waste_percent || 0,
         dto.unit,
         dto.quantity
       );
-      return this.ingredientRepository.create({
-        ...dto,
-        cost_per_ml,
-        cost_per_gram,
-        cost_per_unit,
-        stock: dto.quantity, // Initialize stock to quantity
-      });
-    });
+      savedIngredient.cost_per_ml = cost_per_ml ?? null;
+      savedIngredient.cost_per_gram = cost_per_gram ?? null;
+      savedIngredient.cost_per_unit = cost_per_unit ?? null;
+      ingredients.push(savedIngredient);
+    }
     return this.ingredientRepository.save(ingredients);
   }
 
+  /**
+   * Imports ingredients from a CSV file with stock batches.
+   * @param file Uploaded CSV file
+   * @returns Import summary with created ingredients and errors
+   * @throws BadRequestException if file is invalid or required fields are missing
+   */
   async importCsv(file: Express.Multer.File): Promise<any> {
     if (!file || !file.path) {
       throw new BadRequestException('No file uploaded');
@@ -101,7 +161,6 @@ export class IngredientsService {
     const unmappedColumnsImport: string[] = [];
     let dataRows = 0;
     const errors: string[] = [];
-    const processedMappings: Record<string, string> = {};
 
     const parser = fs.createReadStream(file.path)
       .pipe(csv.parse({ columns: true, trim: true, skip_empty_lines: true }));
@@ -120,7 +179,6 @@ export class IngredientsService {
 
         for (const header of headers) {
           const mappedField = autoMapping[header];
-          processedMappings[header] = mappedField || 'undefined';
           const value = row[header];
           if (!mappedField || mappedField === 'undefined') {
             unmappedColumnsImport.push(header);
@@ -156,39 +214,32 @@ export class IngredientsService {
           }
         }
 
-        const ingredient = this.ingredientRepository.create({
-          ...createDto,
-          cost_per_ml: null,
-          cost_per_gram: null,
-          cost_per_unit: null,
-          stock: createDto.quantity, // Set stock to imported quantity
+        const ingredient = this.ingredientRepository.create(createDto);
+        const savedIngredient = await this.ingredientRepository.save(ingredient);
+
+        const usablePercentage = 1 - (createDto.waste_percent || 0) / 100;
+        const remainingQuantity = createDto.quantity * usablePercentage;
+        const stock = this.stockRepository.create({
+          ingredient: savedIngredient,
+          purchased_quantity: createDto.quantity,
+          unit: createDto.unit,
+          purchase_price: createDto.purchase_price,
+          waste_percent: createDto.waste_percent || 0,
+          remaining_quantity: remainingQuantity,
+          wasted_quantity: 0,
         });
+        await this.stockRepository.save(stock);
+
         const { cost_per_ml, cost_per_gram, cost_per_unit } = this.calculateCosts(
           createDto.purchase_price,
           createDto.waste_percent,
           createDto.unit,
           createDto.quantity
         );
-        ingredient.cost_per_ml = cost_per_ml ?? null;
-        ingredient.cost_per_gram = cost_per_gram ?? null;
-        ingredient.cost_per_unit = cost_per_unit ?? null;
-
-        const existingIngredient = await this.ingredientRepository.findOne({
-          where: { name: createDto.name, unit: createDto.unit, quantity: createDto.quantity },
-        });
-
-        if (existingIngredient) {
-          existingIngredient.purchase_price = createDto.purchase_price;
-          existingIngredient.waste_percent = createDto.waste_percent;
-          existingIngredient.supplier = createDto.supplier ?? '';
-          existingIngredient.cost_per_ml = cost_per_ml ?? null;
-          existingIngredient.cost_per_gram = cost_per_gram ?? null;
-          existingIngredient.cost_per_unit = cost_per_unit ?? null;
-          existingIngredient.stock += createDto.quantity; // Increment stock by imported quantity
-          results.push(await this.ingredientRepository.save(existingIngredient));
-        } else {
-          results.push(await this.ingredientRepository.save(ingredient));
-        }
+        savedIngredient.cost_per_ml = cost_per_ml ?? null;
+        savedIngredient.cost_per_gram = cost_per_gram ?? null;
+        savedIngredient.cost_per_unit = cost_per_unit ?? null;
+        results.push(await this.ingredientRepository.save(savedIngredient));
       } catch (error) {
         errors.push(`Row ${dataRows}: ${error.message} (Details: ${JSON.stringify(row)})`);
       }
@@ -202,26 +253,46 @@ export class IngredientsService {
         successfullyImported: results.length,
         errors,
         unmappedColumns: unmappedColumnsImport,
-        processedMappings,
-        note: 'Ingredients imported using automatic column mapping. Stock updated based on quantity.',
+        note: 'Ingredients imported with stock batches using automatic column mapping.',
       },
     };
   }
 
+  /**
+   * Retrieves all ingredients with their stock batches.
+   * @returns List of all ingredients
+   */
   async findAll(): Promise<Ingredient[]> {
-    return this.ingredientRepository.find();
+    return this.ingredientRepository.find({ relations: ['stocks'] });
   }
 
+  /**
+   * Retrieves an ingredient by ID with its stock batches.
+   * @param id Ingredient ID
+   * @returns The ingredient
+   * @throws BadRequestException if ingredient is not found
+   */
   async findOne(id: string): Promise<Ingredient> {
-    const ingredient = await this.ingredientRepository.findOneBy({ id });
+    const ingredient = await this.ingredientRepository.findOne({ where: { id }, relations: ['stocks'] });
     if (!ingredient) {
       throw new BadRequestException(`Ingredient with ID ${id} not found`);
     }
     return ingredient;
   }
 
+  /**
+   * Updates an existing ingredient and its stock batches.
+   * @param id Ingredient ID
+   * @param updateIngredientDto Updated data
+   * @returns The updated ingredient
+   * @throws BadRequestException if waste percent is out of range
+   */
   async update(id: string, updateIngredientDto: UpdateIngredientDto): Promise<Ingredient> {
     const ingredient = await this.findOne(id);
+    if (updateIngredientDto.waste_percent && (updateIngredientDto.waste_percent < 0 || updateIngredientDto.waste_percent > 100)) {
+      throw new BadRequestException('Waste percentage must be between 0 and 100');
+    }
+
     const newPurchasePrice = updateIngredientDto.purchase_price ?? ingredient.purchase_price;
     const newWastePercent = updateIngredientDto.waste_percent ?? ingredient.waste_percent;
     const newUnit = updateIngredientDto.unit ?? ingredient.unit;
@@ -242,14 +313,35 @@ export class IngredientsService {
       cost_per_ml: cost_per_ml ?? null,
       cost_per_gram: cost_per_gram ?? null,
       cost_per_unit: cost_per_unit ?? null,
-      stock: updateIngredientDto.stock ?? ingredient.stock,
     });
+
+    // Update existing stock or create new if quantity changes significantly
+    if (updateIngredientDto.quantity && updateIngredientDto.quantity !== ingredient.quantity) {
+      const usablePercentage = 1 - (newWastePercent / 100);
+      const remainingQuantity = updateIngredientDto.quantity * usablePercentage;
+      const stock = this.stockRepository.create({
+        ingredient,
+        purchased_quantity: updateIngredientDto.quantity,
+        unit: newUnit,
+        purchase_price: newPurchasePrice,
+        waste_percent: newWastePercent,
+        remaining_quantity: remainingQuantity,
+        wasted_quantity: 0,
+      });
+      await this.stockRepository.save(stock);
+    }
 
     return this.ingredientRepository.save(ingredient);
   }
 
+  /**
+   * Deletes an ingredient and its stock batches.
+   * @param id Ingredient ID
+   * @throws BadRequestException if ingredient is not found
+   */
   async remove(id: string): Promise<void> {
     const ingredient = await this.findOne(id);
+    await this.stockRepository.delete({ ingredient: { id } });
     await this.ingredientRepository.remove(ingredient);
   }
 
@@ -379,6 +471,9 @@ export class IngredientsService {
     cost_per_gram: number | undefined;
     cost_per_unit: number | undefined;
   } {
+    if (waste_percent < 0 || waste_percent > 100) {
+      throw new BadRequestException('Waste percentage must be between 0 and 100');
+    }
     const usablePercentage = 1 - (waste_percent / 100);
     if (usablePercentage <= 0) {
       throw new BadRequestException('Waste percent results in zero or negative usable quantity.');
@@ -403,14 +498,11 @@ export class IngredientsService {
     }
 
     const usableQuantity = totalQuantity * usablePercentage;
-    const cost_per_ml = isMilliliters ? (purchase_price / usableQuantity) : undefined;
-    const cost_per_gram = isGrams ? (purchase_price / usableQuantity) : undefined;
-    const cost_per_unit = isUnits ? (purchase_price / usableQuantity) : undefined;
-
+    const baseCost = purchase_price / usableQuantity;
     return {
-      cost_per_ml: cost_per_ml !== undefined ? Number(cost_per_ml.toFixed(4)) : undefined,
-      cost_per_gram: cost_per_gram !== undefined ? Number(cost_per_gram.toFixed(4)) : undefined,
-      cost_per_unit: cost_per_unit !== undefined ? Number(cost_per_unit.toFixed(4)) : undefined,
+      cost_per_ml: isMilliliters ? Number(baseCost.toFixed(4)) : undefined,
+      cost_per_gram: isGrams ? Number(baseCost.toFixed(4)) : undefined,
+      cost_per_unit: isUnits ? Number(baseCost.toFixed(4)) : undefined,
     };
   }
 }
