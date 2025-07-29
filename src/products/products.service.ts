@@ -513,7 +513,7 @@ export class ProductsService {
    * @returns Converted quantity
    * @throws BadRequestException if units are incompatible
    */
-  private convertQuantity(quantity: number, fromUnit: string, toUnit: string): number {
+  public convertQuantity(quantity: number, fromUnit: string, toUnit: string): number {
     const fromLower = fromUnit.toLowerCase();
     const toLower = toUnit.toLowerCase();
 

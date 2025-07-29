@@ -28,43 +28,58 @@ export class SalesService {
   async create(createSaleDto: CreateSaleDto, userId: string): Promise<Sale> {
     const user = await this.usersService.findById(userId);
     if (!user) throw new BadRequestException('User not found');
-
+  
     if (!createSaleDto.productId) {
       throw new BadRequestException('Product ID is required for registered products');
     }
     const product = await this.productsService.findOne(createSaleDto.productId);
     if (!product) throw new NotFoundException(`Product ${createSaleDto.productId} not found`);
-
+  
     if (createSaleDto.quantity <= 0) {
       throw new BadRequestException('Quantity must be positive');
     }
-
+  
     const sale = await this.entityManager.transaction(async transactionalEntityManager => {
-      const totalIngredientQuantities: Record<string, number> = {};
+      const totalIngredientQuantities: Record<string, { quantity: number; unit: string }> = {};
       for (const pi of product.ingredients) {
         const ingredientId = pi.ingredient.id;
         const neededQuantity = pi.quantity * createSaleDto.quantity;
-        totalIngredientQuantities[ingredientId] = (totalIngredientQuantities[ingredientId] || 0) + neededQuantity;
+        totalIngredientQuantities[ingredientId] = totalIngredientQuantities[ingredientId] || { quantity: 0, unit: pi.unit };
+        totalIngredientQuantities[ingredientId].quantity += neededQuantity;
+        totalIngredientQuantities[ingredientId].unit = pi.unit;
+        console.log(`Ingredient ${ingredientId}: Needed ${neededQuantity} ${pi.unit}, Total ${totalIngredientQuantities[ingredientId].quantity} ${pi.unit}`);
       }
-
-      for (const [ingredientId, neededQuantity] of Object.entries(totalIngredientQuantities)) {
+  
+      for (const [ingredientId, { quantity: neededQuantity, unit: requestedUnit }] of Object.entries(totalIngredientQuantities)) {
         const totalAvailable = await this.stockService.getAvailableStock(ingredientId);
-        if (totalAvailable < neededQuantity) {
-          throw new BadRequestException(`Insufficient stock for ingredient ${ingredientId}. Available: ${totalAvailable.toFixed(2)}, Needed: ${neededQuantity.toFixed(2)}`);
+        const neededInLiters = this.productsService.convertQuantity(neededQuantity, requestedUnit, 'L');
+        console.log(`Checking stock for ${ingredientId}: Available ${totalAvailable}L, Needed ${neededInLiters}L`);
+        if (totalAvailable < neededInLiters) {
+          throw new BadRequestException(`Insufficient stock for ingredient ${ingredientId}. Available: ${totalAvailable.toFixed(2)}L, Needed: ${neededInLiters.toFixed(2)}L`);
         }
-
+  
         let remainingToDeduct = neededQuantity;
         const stocks = await this.stockService.findAllByIngredientId(ingredientId);
-
+        console.log(`Stocks found for ${ingredientId}:`, stocks);
+  
         for (const stock of stocks) {
           if (remainingToDeduct <= 0) break;
-          const deductAmount = Math.min(stock.remaining_quantity, remainingToDeduct);
-          stock.remaining_quantity -= deductAmount;
-          remainingToDeduct -= deductAmount;
+          const stockRemainingInRequestedUnit = await this.productsService.convertQuantity(stock.remaining_quantity, 'L', requestedUnit);
+          const deductAmountInRequestedUnit = Math.min(remainingToDeduct, stockRemainingInRequestedUnit);
+          console.log(`Deducting ${deductAmountInRequestedUnit} ${requestedUnit} from stock ${stock.id}, Remaining to deduct ${remainingToDeduct} ${requestedUnit}`);
+          stock.remaining_quantity -= this.productsService.convertQuantity(deductAmountInRequestedUnit, requestedUnit, 'L');
+          if (stock.remaining_quantity < 0) {
+            throw new BadRequestException(`Negative stock quantity detected for ${stock.id}`);
+          }
+          remainingToDeduct -= deductAmountInRequestedUnit;
           await transactionalEntityManager.save(stock);
+          console.log(`Stock ${stock.id} updated to ${stock.remaining_quantity}L`);
+        }
+        if (remainingToDeduct > 0) {
+          throw new BadRequestException(`Failed to deduct full quantity (${remainingToDeduct} ${requestedUnit}) for ingredient ${ingredientId}`);
         }
       }
-
+  
       const sale = this.salesRepository.create({
         product,
         product_name: product.name,
@@ -72,14 +87,14 @@ export class SalesService {
         total_amount: product.sell_price * createSaleDto.quantity,
         user,
       });
-
+  
       await transactionalEntityManager.save(sale);
       return sale;
     });
-
+  
     const savedSale = await this.salesRepository.findOne({ where: { id: sale.id }, relations: ['product', 'user'] });
     if (!savedSale) {
-      throw new Error('Failed to retrieve saved sale'); // This should not happen if transaction succeeds
+      throw new Error('Failed to retrieve saved sale');
     }
     return savedSale;
   }
