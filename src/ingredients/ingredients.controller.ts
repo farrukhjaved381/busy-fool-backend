@@ -38,7 +38,7 @@ export class IngredientsController {
           cost_per_gram: null,
           cost_per_unit: null,
           supplier: 'Oatly',
-          stock: 2,
+         
           created_at: '2025-07-24T11:15:00Z'
         }
       }
@@ -85,7 +85,7 @@ export class IngredientsController {
             cost_per_gram: null,
             cost_per_unit: null,
             supplier: 'Oatly',
-            stock: 2,
+          
             created_at: '2025-07-24T11:15:00Z'
           },
           {
@@ -99,7 +99,7 @@ export class IngredientsController {
             cost_per_gram: null,
             cost_per_unit: null,
             supplier: 'Almond Breeze',
-            stock: 1,
+           
             created_at: '2025-07-24T11:15:00Z'
           }
         ]
@@ -165,7 +165,7 @@ export class IngredientsController {
               quantity: 10,
               purchase_price: 80,
               waste_percent: 5,
-              stock: 10,
+           
               cost_per_ml: 0.0084,
               cost_per_gram: null,
               cost_per_unit: null,
@@ -186,7 +186,7 @@ export class IngredientsController {
               supplier: 'supplier',
               quantity: 'quantity'
             },
-            note: 'Ingredients imported using automatic column mapping. Stock updated based on quantity.'
+            note: 'Ingredients imported using automatic column mapping.'
           }
         }
       }
@@ -232,7 +232,7 @@ export class IngredientsController {
             cost_per_gram: null,
             cost_per_unit: null,
             supplier: 'Oatly',
-            stock: 2,
+          
             created_at: '2025-07-24T11:15:00Z'
           },
           {
@@ -246,7 +246,7 @@ export class IngredientsController {
             cost_per_gram: null,
             cost_per_unit: null,
             supplier: 'Almond Breeze',
-            stock: 1,
+    
             created_at: '2025-07-24T11:15:00Z'
           }
         ]
@@ -277,7 +277,7 @@ export class IngredientsController {
           cost_per_gram: null,
           cost_per_unit: null,
           supplier: 'Oatly',
-          stock: 2,
+         
           created_at: '2025-07-24T11:15:00Z'
         }
       }
@@ -309,7 +309,7 @@ export class IngredientsController {
           cost_per_gram: null,
           cost_per_unit: null,
           supplier: 'Alpro',
-          stock: 5,
+     
           created_at: '2025-07-24T11:15:00Z'
         }
       }
@@ -329,7 +329,7 @@ export class IngredientsController {
         purchase_price: { type: 'number', example: 2.90 },
         waste_percent: { type: 'number', example: 12 },
         supplier: { type: 'string', example: 'Alpro', nullable: true },
-        stock: { type: 'number', example: 5 }
+      
       },
       required: []
     }

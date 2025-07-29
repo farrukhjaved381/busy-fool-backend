@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CreateIngredientDto } from './dto/create-ingredient.dto';
@@ -8,7 +8,6 @@ import * as csv from 'csv-parse';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Stock } from '../stock/entities/stock.entity';
-import { ApiProperty } from '@nestjs/swagger';
 
 /**
  * Service to manage ingredient-related operations including creation, updates, and CSV import.
@@ -47,33 +46,34 @@ export class IngredientsService {
     if (!createIngredientDto.quantity || createIngredientDto.quantity <= 0) {
       throw new BadRequestException('Quantity must be a positive number');
     }
-    if (createIngredientDto.waste_percent && (createIngredientDto.waste_percent < 0 || createIngredientDto.waste_percent > 100)) {
+    if (createIngredientDto.waste_percent < 0 || createIngredientDto.waste_percent > 100) {
       throw new BadRequestException('Waste percentage must be between 0 and 100');
     }
 
     const ingredient = this.ingredientRepository.create(createIngredientDto);
     const savedIngredient = await this.ingredientRepository.save(ingredient);
 
-    const usablePercentage = 1 - (createIngredientDto.waste_percent || 0) / 100;
-    const purchasedQuantity = createIngredientDto.quantity;
-    const remainingQuantity = purchasedQuantity * usablePercentage;
-
+    const usablePercentage = 1 - (createIngredientDto.waste_percent / 100);
+    const purchasePricePerUnit = createIngredientDto.purchase_price / createIngredientDto.quantity;
+    const totalPurchasedPrice = createIngredientDto.purchase_price;
     const stock = this.stockRepository.create({
-      ingredient: savedIngredient,
-      purchased_quantity: purchasedQuantity,
+      ingredient: { id: savedIngredient.id },
+      purchased_quantity: createIngredientDto.quantity,
       unit: createIngredientDto.unit,
-      purchase_price: createIngredientDto.purchase_price,
-      waste_percent: createIngredientDto.waste_percent || 0,
-      remaining_quantity: remainingQuantity,
+      total_purchased_price: totalPurchasedPrice,
+      purchase_price_per_unit: purchasePricePerUnit,
+      waste_percent: createIngredientDto.waste_percent,
+      remaining_quantity: createIngredientDto.quantity * usablePercentage,
       wasted_quantity: 0,
+      purchased_at: new Date(),
     });
     await this.stockRepository.save(stock);
 
     const { cost_per_ml, cost_per_gram, cost_per_unit } = this.calculateCosts(
       createIngredientDto.purchase_price,
-      createIngredientDto.waste_percent || 0,
+      createIngredientDto.waste_percent,
       createIngredientDto.unit,
-      createIngredientDto.quantity
+      createIngredientDto.quantity,
     );
     savedIngredient.cost_per_ml = cost_per_ml ?? null;
     savedIngredient.cost_per_gram = cost_per_gram ?? null;
@@ -81,12 +81,6 @@ export class IngredientsService {
     return this.ingredientRepository.save(savedIngredient);
   }
 
-  /**
-   * Creates multiple ingredients with initial stock batches.
-   * @param createIngredientDtos Array of ingredient data
-   * @returns Array of created ingredients
-   * @throws BadRequestException if no ingredients are provided or quantity is invalid
-   */
   async bulkCreate(createIngredientDtos: CreateIngredientDto[]): Promise<Ingredient[]> {
     if (!createIngredientDtos.length) {
       throw new BadRequestException('No ingredients provided');
@@ -96,30 +90,34 @@ export class IngredientsService {
       if (!dto.quantity || dto.quantity <= 0) {
         throw new BadRequestException('Quantity must be a positive number');
       }
-      if (dto.waste_percent && (dto.waste_percent < 0 || dto.waste_percent > 100)) {
+      if (dto.waste_percent < 0 || dto.waste_percent > 100) {
         throw new BadRequestException('Waste percentage must be between 0 and 100');
       }
+
       const ingredient = this.ingredientRepository.create(dto);
       const savedIngredient = await this.ingredientRepository.save(ingredient);
 
-      const usablePercentage = 1 - (dto.waste_percent || 0) / 100;
-      const remainingQuantity = dto.quantity * usablePercentage;
+      const usablePercentage = 1 - (dto.waste_percent / 100);
+      const purchasePricePerUnit = dto.purchase_price / dto.quantity;
+      const totalPurchasedPrice = dto.purchase_price;
       const stock = this.stockRepository.create({
-        ingredient: savedIngredient,
+        ingredient: { id: savedIngredient.id },
         purchased_quantity: dto.quantity,
         unit: dto.unit,
-        purchase_price: dto.purchase_price,
-        waste_percent: dto.waste_percent || 0,
-        remaining_quantity: remainingQuantity,
+        total_purchased_price: totalPurchasedPrice,
+        purchase_price_per_unit: purchasePricePerUnit,
+        waste_percent: dto.waste_percent,
+        remaining_quantity: dto.quantity * usablePercentage,
         wasted_quantity: 0,
+        purchased_at: new Date(),
       });
       await this.stockRepository.save(stock);
 
       const { cost_per_ml, cost_per_gram, cost_per_unit } = this.calculateCosts(
         dto.purchase_price,
-        dto.waste_percent || 0,
+        dto.waste_percent,
         dto.unit,
-        dto.quantity
+        dto.quantity,
       );
       savedIngredient.cost_per_ml = cost_per_ml ?? null;
       savedIngredient.cost_per_gram = cost_per_gram ?? null;
@@ -144,9 +142,6 @@ export class IngredientsService {
     if (fileExtension !== '.csv') {
       throw new BadRequestException('Only .csv files are supported');
     }
-    if (!file.mimetype || !file.mimetype.includes('csv')) {
-      throw new BadRequestException('Invalid file type. Please upload a .csv file');
-    }
 
     const headers = await this.extractHeaders(file.path);
     const { suggestedMappings, unmappedColumns, warnings } = this.generateMappings(headers);
@@ -158,75 +153,46 @@ export class IngredientsService {
     }
 
     const results: Ingredient[] = [];
-    const unmappedColumnsImport: string[] = [];
-    let dataRows = 0;
     const errors: string[] = [];
+    let dataRows = 0;
 
     const parser = fs.createReadStream(file.path)
       .pipe(csv.parse({ columns: true, trim: true, skip_empty_lines: true }));
     for await (const row of parser) {
-      if (Object.keys(row).length === 0) continue;
       dataRows++;
       try {
         const createDto: CreateIngredientDto = {
-          name: 'Unknown',
-          unit: 'Unknown',
-          quantity: 1,
-          purchase_price: 0,
-          waste_percent: 0,
-          supplier: undefined,
+          name: row[autoMapping['name']] || 'Unknown',
+          unit: row[autoMapping['unit']] || 'Unknown',
+          quantity: parseFloat(row[autoMapping['quantity']]) || 1,
+          purchase_price: parseFloat(row[autoMapping['purchase_price']]) || 0,
+          waste_percent: parseFloat(row[autoMapping['waste_percent']]) || 0,
+          supplier: row[autoMapping['supplier']] || undefined,
         };
 
-        for (const header of headers) {
-          const mappedField = autoMapping[header];
-          const value = row[header];
-          if (!mappedField || mappedField === 'undefined') {
-            unmappedColumnsImport.push(header);
-            continue;
-          }
-          switch (mappedField) {
-            case 'name':
-              createDto.name = value || 'Unknown';
-              break;
-            case 'unit':
-              createDto.unit = value || 'Unknown';
-              break;
-            case 'quantity':
-              createDto.quantity = parseFloat(value) || 1;
-              if (createDto.quantity <= 0) {
-                errors.push(`Row ${dataRows}: Invalid quantity: ${value} (must be positive), using 1`);
-                createDto.quantity = 1;
-              }
-              break;
-            case 'purchase_price':
-              createDto.purchase_price = parseFloat(value) || 0;
-              break;
-            case 'waste_percent':
-              createDto.waste_percent = parseFloat(value) || 0;
-              if (isNaN(createDto.waste_percent) || createDto.waste_percent > 100) {
-                errors.push(`Row ${dataRows}: Invalid waste_percent: ${value} (must be 0-100), using 0`);
-                createDto.waste_percent = 0;
-              }
-              break;
-            case 'supplier':
-              createDto.supplier = value || undefined;
-              break;
-          }
+        if (!createDto.quantity || createDto.quantity <= 0) {
+          throw new Error('Quantity must be a positive number');
+        }
+        if (createDto.waste_percent < 0 || createDto.waste_percent > 100) {
+          throw new Error('Waste percentage must be between 0 and 100');
         }
 
         const ingredient = this.ingredientRepository.create(createDto);
         const savedIngredient = await this.ingredientRepository.save(ingredient);
 
-        const usablePercentage = 1 - (createDto.waste_percent || 0) / 100;
-        const remainingQuantity = createDto.quantity * usablePercentage;
+        const usablePercentage = 1 - (createDto.waste_percent / 100);
+        const purchasePricePerUnit = createDto.purchase_price / createDto.quantity;
+        const totalPurchasedPrice = createDto.purchase_price;
         const stock = this.stockRepository.create({
-          ingredient: savedIngredient,
+          ingredient: { id: savedIngredient.id },
           purchased_quantity: createDto.quantity,
           unit: createDto.unit,
-          purchase_price: createDto.purchase_price,
-          waste_percent: createDto.waste_percent || 0,
-          remaining_quantity: remainingQuantity,
+          total_purchased_price: totalPurchasedPrice,
+          purchase_price_per_unit: purchasePricePerUnit,
+          waste_percent: createDto.waste_percent,
+          remaining_quantity: createDto.quantity * usablePercentage,
           wasted_quantity: 0,
+          purchased_at: new Date(),
         });
         await this.stockRepository.save(stock);
 
@@ -234,7 +200,7 @@ export class IngredientsService {
           createDto.purchase_price,
           createDto.waste_percent,
           createDto.unit,
-          createDto.quantity
+          createDto.quantity,
         );
         savedIngredient.cost_per_ml = cost_per_ml ?? null;
         savedIngredient.cost_per_gram = cost_per_gram ?? null;
@@ -245,14 +211,19 @@ export class IngredientsService {
       }
     }
 
-    await fs.promises.unlink(file.path);
+    try {
+      await fs.promises.unlink(file.path);
+    } catch (err) {
+      console.warn(`Failed to delete file ${file.path}: ${err.message}`);
+    }
+
     return {
       importedIngredients: results,
       summary: {
-        totalRows: dataRows + 1,
+        totalRows: dataRows,
         successfullyImported: results.length,
         errors,
-        unmappedColumns: unmappedColumnsImport,
+        unmappedColumns,
         note: 'Ingredients imported with stock batches using automatic column mapping.',
       },
     };
@@ -270,12 +241,12 @@ export class IngredientsService {
    * Retrieves an ingredient by ID with its stock batches.
    * @param id Ingredient ID
    * @returns The ingredient
-   * @throws BadRequestException if ingredient is not found
+   * @throws NotFoundException if ingredient is not found
    */
   async findOne(id: string): Promise<Ingredient> {
     const ingredient = await this.ingredientRepository.findOne({ where: { id }, relations: ['stocks'] });
     if (!ingredient) {
-      throw new BadRequestException(`Ingredient with ID ${id} not found`);
+      throw new NotFoundException(`Ingredient with ID ${id} not found`);
     }
     return ingredient;
   }
@@ -285,7 +256,7 @@ export class IngredientsService {
    * @param id Ingredient ID
    * @param updateIngredientDto Updated data
    * @returns The updated ingredient
-   * @throws BadRequestException if waste percent is out of range
+   * @throws BadRequestException if waste percent is out of range or quantity is insufficient
    */
   async update(id: string, updateIngredientDto: UpdateIngredientDto): Promise<Ingredient> {
     const ingredient = await this.findOne(id);
@@ -298,11 +269,17 @@ export class IngredientsService {
     const newUnit = updateIngredientDto.unit ?? ingredient.unit;
     const newQuantity = updateIngredientDto.quantity ?? ingredient.quantity;
 
+    // Check if existing stock is sufficient for new quantity
+    const totalUsed = (await this.stockRepository.sum('remaining_quantity', { ingredient: { id } })) || 0;
+    if (newQuantity < totalUsed) {
+      throw new BadRequestException(`New quantity (${newQuantity}) cannot be less than used stock (${totalUsed})`);
+    }
+
     const { cost_per_ml, cost_per_gram, cost_per_unit } = this.calculateCosts(
       newPurchasePrice,
       newWastePercent,
       newUnit,
-      newQuantity
+      newQuantity,
     );
 
     Object.assign(ingredient, updateIngredientDto, {
@@ -315,19 +292,16 @@ export class IngredientsService {
       cost_per_unit: cost_per_unit ?? null,
     });
 
-    // Update existing stock or create new if quantity changes significantly
-    if (updateIngredientDto.quantity && updateIngredientDto.quantity !== ingredient.quantity) {
+    // Update existing stock instead of creating new
+    const stock = await this.stockRepository.findOne({ where: { ingredient: { id } }, order: { purchased_at: 'DESC' } });
+    if (stock) {
       const usablePercentage = 1 - (newWastePercent / 100);
-      const remainingQuantity = updateIngredientDto.quantity * usablePercentage;
-      const stock = this.stockRepository.create({
-        ingredient,
-        purchased_quantity: updateIngredientDto.quantity,
-        unit: newUnit,
-        purchase_price: newPurchasePrice,
-        waste_percent: newWastePercent,
-        remaining_quantity: remainingQuantity,
-        wasted_quantity: 0,
-      });
+      stock.purchased_quantity = newQuantity;
+      stock.unit = newUnit;
+      stock.total_purchased_price = newPurchasePrice; // Corrected to use total_purchased_price
+      stock.purchase_price_per_unit = newPurchasePrice / newQuantity; // Recalculate unit price
+      stock.waste_percent = newWastePercent;
+      stock.remaining_quantity = newQuantity * usablePercentage;
       await this.stockRepository.save(stock);
     }
 
@@ -337,7 +311,7 @@ export class IngredientsService {
   /**
    * Deletes an ingredient and its stock batches.
    * @param id Ingredient ID
-   * @throws BadRequestException if ingredient is not found
+   * @throws NotFoundException if ingredient is not found
    */
   async remove(id: string): Promise<void> {
     const ingredient = await this.findOne(id);
@@ -374,7 +348,7 @@ export class IngredientsService {
 
     const maxTokens = Math.max(
       tokens1.reduce((sum, t, i) => sum + ((i === tokens1.length - 1) ? lastTokenWeight : 1) * (weightMap[t] || 1), 0),
-      tokens2.reduce((sum, t, i) => sum + ((i === tokens2.length - 1) ? lastTokenWeight : 1) * (weightMap[t] || 1), 0)
+      tokens2.reduce((sum, t, i) => sum + ((i === tokens2.length - 1) ? lastTokenWeight : 1) * (weightMap[t] || 1), 0),
     );
     return maxTokens ? commonTokens / maxTokens : 0;
   }
@@ -402,8 +376,7 @@ export class IngredientsService {
   }
 
   private extractHeaders(filePath: string): Promise<string[]> {
-    const fileContent = fs.promises.readFile(filePath, 'utf8');
-    return fileContent.then(content => {
+    return fs.promises.readFile(filePath, 'utf8').then(content => {
       const firstLine = content.split('\n')[0].trim();
       return firstLine ? firstLine.split(',').map(header => header.trim()) : [];
     });
@@ -480,22 +453,16 @@ export class IngredientsService {
     }
 
     let totalQuantity = quantity || 1;
-    let isMilliliters = false;
-    let isGrams = false;
-    let isUnits = false;
+    let isMilliliters = unit.toLowerCase().includes('ml');
+    let isLiters = unit.toLowerCase().includes('l');
+    let isGrams = unit.toLowerCase().includes('g');
+    let isKilograms = unit.toLowerCase().includes('kg');
+    let isUnits = !isMilliliters && !isLiters && !isGrams && !isKilograms;
 
-    if (unit.toLowerCase().includes('ml') || unit.toLowerCase().includes('l')) {
-      totalQuantity = unit.toLowerCase().includes('l') ? totalQuantity * 1000 : totalQuantity;
-      isMilliliters = true;
-    } else if (unit.toLowerCase().includes('g') || unit.toLowerCase().includes('kg')) {
-      totalQuantity = unit.toLowerCase().includes('kg') ? totalQuantity * 1000 : totalQuantity;
-      isGrams = true;
-    } else if (unit.toLowerCase().includes('unit')) {
-      totalQuantity = totalQuantity || 1;
-      isUnits = true;
-    } else {
-      throw new BadRequestException('Unsupported unit. Use ml, L, g, kg, or unit.');
-    }
+    if (isLiters) totalQuantity *= 1000; // Convert L to ml
+    if (isKilograms) totalQuantity *= 1000; // Convert kg to g
+    if (isMilliliters || isLiters) isMilliliters = true;
+    if (isGrams || isKilograms) isGrams = true;
 
     const usableQuantity = totalQuantity * usablePercentage;
     const baseCost = purchase_price / usableQuantity;

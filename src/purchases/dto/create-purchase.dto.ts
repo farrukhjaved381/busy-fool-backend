@@ -10,7 +10,13 @@ export class CreatePurchaseDto {
   @ApiProperty({ description: 'Quantity purchased' })
   quantity: number;
 
+  @IsString()
+  @ApiProperty({ description: 'Unit of purchase' })
+  unit: string;
+
   @IsNumber()
-  @ApiProperty({ description: 'Total purchase cost' })
-  total_cost: number;
+  @ApiProperty({ description: 'Price per unit of the purchase' })
+  purchasePrice: number; // Renamed for clarity
+
+  // Removed total_cost from DTO as it can be calculated
 }

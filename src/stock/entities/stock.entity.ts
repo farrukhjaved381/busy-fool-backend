@@ -1,5 +1,6 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, CreateDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, CreateDateColumn, OneToMany } from 'typeorm';
 import { Ingredient } from '../../ingredients/entities/ingredient.entity';
+import { Waste } from '../../waste/entities/waste.entity';
 
 @Entity()
 export class Stock {
@@ -10,6 +11,9 @@ export class Stock {
   @JoinColumn()
   ingredient: Ingredient;
 
+  @OneToMany(() => Waste, waste => waste.stock)
+  wastes: Waste[];
+
   @Column({ type: 'decimal', precision: 10, scale: 2, nullable: false })
   purchased_quantity: number;
 
@@ -17,7 +21,10 @@ export class Stock {
   unit: string;
 
   @Column({ type: 'decimal', precision: 10, scale: 2, nullable: false })
-  purchase_price: number;
+  total_purchased_price: number; // Total price for the purchased quantity
+
+  @Column({ type: 'decimal', precision: 10, scale: 4, nullable: false })
+  purchase_price_per_unit: number; // Price per unit (e.g., per ml, L, etc.)
 
   @Column({ type: 'decimal', precision: 5, scale: 2, nullable: false })
   waste_percent: number;

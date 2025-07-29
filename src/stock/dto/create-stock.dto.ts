@@ -1,29 +1,31 @@
-import { IsString, IsNumber, Min, IsOptional, Max } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { IsNotEmpty, IsNumber, IsString, Min, Max, IsOptional } from 'class-validator';
 
 export class CreateStockDto {
+  @ApiProperty({ description: 'ID of the ingredient' })
   @IsString()
-  @ApiProperty({ description: 'Ingredient ID', example: '123e4567-e89b-12d3-a456-426614174000' })
+  @IsNotEmpty()
   ingredientId: string;
 
+  @ApiProperty({ description: 'Quantity of the ingredient purchased' })
   @IsNumber()
   @Min(0.01)
-  @ApiProperty({ description: 'Purchased quantity', example: 100, minimum: 0.01 })
   purchased_quantity: number;
 
+  @ApiProperty({ description: 'Unit of measurement (e.g., ml, g, unit)' })
   @IsString()
-  @ApiProperty({ description: 'Unit of measurement (e.g., ml, g, unit)', example: 'ml', minLength: 1, maxLength: 50 })
+  @IsNotEmpty()
   unit: string;
 
+  @ApiProperty({ description: 'Price per unit of the purchased ingredient' })
   @IsNumber()
-  @Min(0.01)
-  @ApiProperty({ description: 'Purchase price for the total quantity', example: 0.84, minimum: 0.01 })
+  @Min(0)
   purchase_price: number;
 
+  @ApiProperty({ description: 'Percentage of waste expected (0-100)', required: false, default: 0 })
   @IsNumber()
   @Min(0)
   @Max(100)
   @IsOptional()
-  @ApiProperty({ description: 'Waste percentage (0-100)', example: 10.0, required: false, minimum: 0, maximum: 100 })
   waste_percent?: number;
 }

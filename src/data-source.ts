@@ -11,7 +11,7 @@ export const AppDataSource = new DataSource({
   username: process.env.DB_USER || 'busyfool',
   password: process.env.DB_PASSWORD || 'securepassword',
   database: process.env.DB_NAME || 'busyfool_dev',
-  synchronize: false,
+  synchronize: true,
   logging: true,
   entities: ['dist/**/*.entity.js'], // Use compiled output
   migrations: ['dist/migrations/*.js'],

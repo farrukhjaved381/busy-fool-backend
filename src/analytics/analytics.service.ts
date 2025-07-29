@@ -1,42 +1,34 @@
 import { Injectable, BadRequestException, InternalServerErrorException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, Between } from 'typeorm';
 import { Product } from '../products/entities/product.entity';
-import { Sale } from '../sales/entities/sale.entity'; // Import Sale entity for date filtering
+import { Sale } from '../sales/entities/sale.entity';
 
 @Injectable()
 export class AnalyticsService {
   constructor(
     @InjectRepository(Product)
     private productsRepository: Repository<Product>,
-    @InjectRepository(Sale) // Inject Sale repository
+    @InjectRepository(Sale)
     private saleRepository: Repository<Sale>,
-  ) {}
+  ) { }
 
   async getDashboard(startDate: Date, endDate: Date): Promise<any> {
-    
     if (!startDate || !endDate || startDate > endDate) {
       throw new BadRequestException('Invalid date range. Start date must be before end date.');
     }
 
     try {
-      // Fetch products with sales data within the date range
-      const products = await this.productsRepository
-        .createQueryBuilder('product')
+      // Fetch sales within the date range with product details
+      const sales = await this.saleRepository
+        .createQueryBuilder('sale')
+        .leftJoinAndSelect('sale.product', 'product')
         .leftJoinAndSelect('product.ingredients', 'ingredients')
         .leftJoinAndSelect('ingredients.ingredient', 'ingredient')
-        .leftJoin('product.sales', 'sales') // Join with sales for date filtering
-        .where('sales.date >= :startDate AND sales.date <= :endDate', { startDate, endDate })
-        .orWhere('sales.date IS NULL') // Include products with no sales
-        .groupBy('product.id') // Avoid duplicate products
-        .getMany()
-        .catch(err => {
-          console.error('Database query failed:', err);
-          throw new InternalServerErrorException('Failed to retrieve product data');
-        });
+        .where('sale.sale_date >= :startDate AND sale.sale_date <= :endDate', { startDate, endDate })
+        .getMany();
 
-      if (!products || products.length === 0) {
-        console.log('No products found for the date range');
+      if (!sales || sales.length === 0) {
         return {
           revenue: '0.00',
           costs: '0.00',
@@ -48,37 +40,66 @@ export class AnalyticsService {
         };
       }
 
-      // Calculate totals based on sales data if available
-      const revenue = products.reduce((sum, p) => {
-        const price = typeof p.sell_price === 'number' ? p.sell_price : 0;
-        return sum + price;
-      }, 0).toFixed(2);
-      const costs = products.reduce((sum, p) => {
-        const cost = typeof p.total_cost === 'number' ? p.total_cost : 0;
-        return sum + cost;
-      }, 0).toFixed(2);
-      const profit = (parseFloat(revenue) - parseFloat(costs)).toFixed(2);
-      const profitMargin = parseFloat(revenue) > 0 ? ((parseFloat(profit) / parseFloat(revenue)) * 100).toFixed(2) : '0.00';
+      // Calculate totals based on sales data
+      const revenue = sales.reduce((sum, sale) => sum + (sale.total_amount || 0), 0);
+      const costs = sales.reduce((sum, sale) => {
+        if (sale.product) {
+          return sum + ((sale.product.total_cost || 0) * sale.quantity);
+        }
+        return sum;
+      }, 0);
+      const profit = (revenue - costs);
+      const profitMargin = revenue > 0 ? ((profit / revenue) * 100) : 0;
 
       // Identify winners and losing money products
-      const losingMoney = products
-        .filter(p => p.status === 'losing money')
-        .map(p => ({ name: p.name, margin_amount: (typeof p.margin_amount === 'number' ? p.margin_amount : 0).toFixed(2) }));
-      const winners = products
-        .filter(p => p.status === 'profitable')
-        .sort((a, b) => (b.margin_amount || 0) - (a.margin_amount || 0))
+      // Replace the losingMoney and quickWins logic
+      const losingMoney = sales
+        .filter(sale => sale.product && sale.product.status === 'losing money')
+        .reduce((acc, sale) => {
+          const existing = acc.find(item => item.name === sale.product.name);
+          if (existing) {
+            existing.quantity += sale.quantity;
+            existing.margin_amount += (sale.product.margin_amount || 0) * sale.quantity;
+          } else {
+            acc.push({
+              name: sale.product.name,
+              quantity: sale.quantity,
+              margin_amount: (sale.product.margin_amount || 0) * sale.quantity,
+            });
+          }
+          return acc;
+        }, [] as { name: string; quantity: number; margin_amount: number }[]);
+
+      const winners = sales
+        .filter(sale => sale.product && sale.product.status === 'profitable')
+        .reduce((acc, sale) => {
+          const existing = acc.find(item => item.name === sale.product.name);
+          if (existing) {
+            existing.quantity += sale.quantity;
+            existing.margin_amount += (sale.product.margin_amount || 0) * sale.quantity;
+          } else {
+            acc.push({
+              name: sale.product.name,
+              quantity: sale.quantity,
+              margin_amount: (sale.product.margin_amount || 0) * sale.quantity,
+            });
+          }
+          return acc;
+        }, [] as { name: string; quantity: number; margin_amount: number }[])
+        .sort((a, b) => b.margin_amount - a.margin_amount)
         .slice(0, 3)
-        .map(p => ({ name: p.name, margin_amount: (typeof p.margin_amount === 'number' ? p.margin_amount : 0).toFixed(2) }));
+        .map(p => ({ name: p.name, margin_amount: Number(p.margin_amount.toFixed(2)) }));
+
       const quickWins = losingMoney.map(p => ({
         name: p.name,
-        suggestion: `Raise price by £${(Math.abs(parseFloat(p.margin_amount)) + 0.50).toFixed(2)}`,
+        suggestion: `Raise price by £${(Math.abs(p.margin_amount / p.quantity) + 0.50).toFixed(2)}`,
       }));
 
       return {
-        revenue,
-        costs,
-        profit,
-        profitMargin,
+        revenue: revenue.toFixed(2),
+        costs: costs.toFixed(2),
+        profit: profit.toFixed(2),
+        profitMargin: profitMargin.toFixed(2),
         losingMoney,
         winners,
         quickWins,

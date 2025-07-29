@@ -27,9 +27,10 @@ export class UpdateIngredientDto extends PartialType(CreateIngredientDto) {
   @ApiProperty({ description: 'New quantity of the ingredient', example: 3, required: false })
   quantity?: number;
 
-  @IsNumber()
-  @Min(0)
-  @IsOptional()
-  @ApiProperty({ description: 'New stock quantity', example: 5, required: false })
-  stock?: number;
+  // Remove stock field as it's not used in service logic
+  // @IsNumber()
+  // @Min(0)
+  // @IsOptional()
+  // @ApiProperty({ description: 'New stock quantity', example: 5, required: false })
+  // stock?: number;
 }

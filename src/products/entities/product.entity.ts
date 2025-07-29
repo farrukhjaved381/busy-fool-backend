@@ -1,7 +1,8 @@
-import { Entity, PrimaryGeneratedColumn, Column, OneToMany, CreateDateColumn, JoinColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, OneToMany, CreateDateColumn } from 'typeorm';
 import { ProductIngredient } from './product-ingredient.entity';
 import { Sale } from '../../sales/entities/sale.entity';
 import { ApiProperty } from '@nestjs/swagger';
+import { Expose } from 'class-transformer';
 
 @Entity()
 export class Product {
@@ -41,8 +42,8 @@ export class Product {
   @ApiProperty({ description: 'Creation timestamp', example: '2025-07-24T11:15:00Z' })
   created_at: Date;
 
-  @OneToMany(() => ProductIngredient, pi => pi.product, { cascade: true })
-  @JoinColumn()
+  @OneToMany(() => ProductIngredient, pi => pi.product, { cascade: true, eager: true })
+  @Expose()
   @ApiProperty({ description: 'List of product-ingredient relations', type: () => [ProductIngredient], readOnly: true })
   ingredients: ProductIngredient[];
 

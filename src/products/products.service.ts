@@ -1,31 +1,28 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, MoreThan, EntityManager } from 'typeorm';
+import { classToPlain } from 'class-transformer';
 import { Product } from './entities/product.entity';
 import { ProductIngredient } from './entities/product-ingredient.entity';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
+import { IngredientsService } from '../ingredients/ingredients.service';
+import { StockService } from '../stock/stock.service';
+import { Stock } from '../stock/entities/stock.entity';
+import { Ingredient } from '../ingredients/entities/ingredient.entity';
 import { WhatIfDto } from './dto/what-if.dto';
 import { MilkSwapDto } from './dto/milk-swap.dto';
 import { QuickActionDto } from './dto/quick-action.dto';
-import { IngredientsService } from '../ingredients/ingredients.service';
-import { Ingredient } from '../ingredients/entities/ingredient.entity';
-import { ApiProperty } from '@nestjs/swagger';
-import { Stock } from '../stock/entities/stock.entity';
 
-/**
- * Service to manage product-related operations including creation, updates, and analytics.
- */
 @Injectable()
 export class ProductsService {
   constructor(
-    @InjectRepository(Product)
-    private productsRepository: Repository<Product>,
-    @InjectRepository(ProductIngredient)
-    private productIngredientsRepository: Repository<ProductIngredient>,
-    private ingredientsService: IngredientsService,
-    @InjectRepository(Stock)
-    private stockRepository: Repository<Stock>,
+    @InjectRepository(Product) private readonly productRepository: Repository<Product>,
+    @InjectRepository(ProductIngredient) private readonly productIngredientRepository: Repository<ProductIngredient>,
+    @InjectRepository(Stock) private readonly stockRepository: Repository<Stock>,
+    private readonly ingredientsService: IngredientsService,
+    @Inject(forwardRef(() => StockService)) private readonly stockService: StockService,
+    private readonly entityManager: EntityManager,
   ) {}
 
   /**
@@ -60,7 +57,7 @@ export class ProductsService {
       stock.remaining_quantity -= this.convertQuantity(ingredientDto.quantity, ingredientDto.unit, stock.unit);
       await this.updateStock(stock);
 
-      const productIngredient = this.productIngredientsRepository.create({
+      const productIngredient = this.productIngredientRepository.create({
         ingredient,
         quantity: ingredientDto.quantity,
         unit: ingredientDto.unit,
@@ -72,26 +69,115 @@ export class ProductsService {
       productIngredients.push(productIngredient);
     }
 
-    const product = this.productsRepository.create({
+    const product = this.productRepository.create({
       name: createProductDto.name,
       category: createProductDto.category,
       sell_price: createProductDto.sell_price,
       total_cost: totalCost,
       margin_amount: createProductDto.sell_price - totalCost,
-      margin_percent: createProductDto.sell_price > 0 ? ((createProductDto.sell_price - totalCost) / createProductDto.sell_price) * 100 : 0,
+      margin_percent: this.calculateCappedMarginPercent(createProductDto.sell_price, totalCost),
       status: this.calculateStatus(createProductDto.sell_price - totalCost),
       ingredients: productIngredients,
     });
 
-    const savedProduct = await this.productsRepository.save(product);
+    const savedProduct = await this.productRepository.save(product);
 
-    // Link product ingredients to the saved product
     for (const productIngredient of productIngredients) {
       productIngredient.product = savedProduct;
-      await this.productIngredientsRepository.save(productIngredient);
+      productIngredient.productId = savedProduct.id;
+      await this.productIngredientRepository.save(productIngredient);
     }
 
-    return savedProduct;
+    return classToPlain(savedProduct) as Product;
+  }
+
+  /**
+   * Creates or updates stock for an ingredient.
+   * @param ingredientId ID of the ingredient
+   * @param createStockDto Data for the new stock
+   * @returns The created or updated stock
+   * @throws BadRequestException if input is invalid
+   */
+  async createOrUpdateStock(ingredientId: string, createStockDto: { purchased_quantity: number; unit: string; purchase_price: number; waste_percent: number }): Promise<Stock> {
+    if (!ingredientId || createStockDto.purchased_quantity <= 0 || !createStockDto.unit || createStockDto.purchase_price < 0 || createStockDto.waste_percent < 0 || createStockDto.waste_percent > 100) {
+      throw new BadRequestException('Invalid stock data');
+    }
+
+    const ingredient = await this.ingredientsService.findOne(ingredientId);
+    if (!ingredient) throw new BadRequestException(`Ingredient ${ingredientId} not found`);
+
+    const existingStocks = await this.stockRepository.find({ where: { ingredient: { id: ingredientId }, remaining_quantity: MoreThan(0) } });
+    if (existingStocks.length > 0) {
+      const stockToUpdate = existingStocks[0];
+      if (this.isCompatibleUnit(stockToUpdate.unit, createStockDto.unit)) {
+        const newRemaining = stockToUpdate.remaining_quantity + createStockDto.purchased_quantity * (1 - createStockDto.waste_percent / 100);
+        const totalPurchased = stockToUpdate.purchased_quantity + createStockDto.purchased_quantity;
+        const totalPurchasedPrice = (stockToUpdate.total_purchased_price || 0) + createStockDto.purchase_price;
+        const purchasePricePerUnit = totalPurchasedPrice / totalPurchased;
+
+        stockToUpdate.remaining_quantity = newRemaining;
+        stockToUpdate.total_purchased_price = totalPurchasedPrice;
+        stockToUpdate.purchase_price_per_unit = purchasePricePerUnit;
+        stockToUpdate.waste_percent = createStockDto.waste_percent;
+        stockToUpdate.purchased_quantity = totalPurchased;
+        await this.stockRepository.save(stockToUpdate);
+
+        await this.updateIngredientCost(ingredientId);
+        return stockToUpdate;
+      }
+    }
+
+    const usableQuantity = createStockDto.purchased_quantity * (1 - createStockDto.waste_percent / 100);
+    const purchasePricePerUnit = createStockDto.purchase_price / createStockDto.purchased_quantity;
+    const newStock = this.stockRepository.create({
+      ingredient: { id: ingredientId },
+      purchased_quantity: createStockDto.purchased_quantity,
+      unit: createStockDto.unit,
+      total_purchased_price: createStockDto.purchase_price,
+      purchase_price_per_unit: purchasePricePerUnit,
+      waste_percent: createStockDto.waste_percent,
+      remaining_quantity: usableQuantity,
+      wasted_quantity: 0,
+      purchased_at: new Date(),
+    });
+    const savedStock = await this.stockRepository.save(newStock);
+
+    await this.updateIngredientCost(ingredientId);
+    return savedStock;
+  }
+
+  /**
+   * Updates the cost_per_unit of an ingredient based on weighted average of stock.
+   * @param ingredientId ID of the ingredient
+   */
+  async updateIngredientCost(ingredientId: string): Promise<void> {
+    const stocks = await this.stockRepository.find({ where: { ingredient: { id: ingredientId } } });
+    if (stocks.length === 0) return;
+
+    const totalCost = stocks.reduce((sum: number, stock: Stock) => sum + (stock.purchase_price_per_unit * stock.purchased_quantity), 0);
+    const totalQuantity = stocks.reduce((sum: number, stock: Stock) => sum + stock.purchased_quantity, 0);
+    const newCostPerUnit = totalCost / totalQuantity;
+
+    const ingredient = await this.ingredientsService.findOne(ingredientId);
+    ingredient.cost_per_unit = newCostPerUnit;
+    await this.ingredientsService.update(ingredientId, { cost_per_unit: newCostPerUnit });
+
+    // Recalculate affected products
+    const products = await this.productRepository.find({ relations: ['ingredients', 'ingredients.ingredient'] });
+    for (const product of products) {
+      if (product.ingredients.some((pi: ProductIngredient) => pi.ingredient.id === ingredientId)) {
+        let totalCost = 0;
+        for (const pi of product.ingredients) {
+          const trueCost = this.calculateTrueCost(pi.ingredient, pi.unit);
+          totalCost += pi.quantity * trueCost;
+        }
+        product.total_cost = totalCost;
+        product.margin_amount = product.sell_price - totalCost;
+        product.margin_percent = this.calculateCappedMarginPercent(product.sell_price, totalCost);
+        product.status = this.calculateStatus(product.margin_amount);
+        await this.productRepository.save(product);
+      }
+    }
   }
 
   /**
@@ -100,7 +186,7 @@ export class ProductsService {
    */
   async findAll(): Promise<Product[]> {
     console.log('Fetching all products'); // Debug log
-    return this.productsRepository.find({ relations: ['ingredients', 'ingredients.ingredient'] });
+    return this.productRepository.find({ relations: ['ingredients', 'ingredients.ingredient'] });
   }
 
   /**
@@ -111,13 +197,13 @@ export class ProductsService {
    */
   async findOne(id: string): Promise<Product> {
     console.log('Finding product with ID:', id); // Debug log
-    const product = await this.productsRepository.findOne({ where: { id }, relations: ['ingredients', 'ingredients.ingredient'] });
+    const product = await this.productRepository.findOne({ where: { id }, relations: ['ingredients', 'ingredients.ingredient'] });
     if (!product) throw new NotFoundException(`Product with ID ${id} not found`);
     return product;
   }
 
   /**
-   * Updates a product and its ingredients.
+   * Updates a product and its ingredients with margin recalculation.
    * @param id Product ID
    * @param updateProductDto Update data
    * @returns The updated product
@@ -127,44 +213,93 @@ export class ProductsService {
   async update(id: string, updateProductDto: UpdateProductDto): Promise<Product> {
     const product = await this.findOne(id);
 
+    // Update basic fields
     if (updateProductDto.name) product.name = updateProductDto.name;
     if (updateProductDto.category) product.category = updateProductDto.category;
-    if (updateProductDto.sell_price) product.sell_price = updateProductDto.sell_price;
-
-    if (updateProductDto.ingredients) {
-      await this.productIngredientsRepository.delete({ product: { id } });
-      let totalCost = 0;
-      for (const ingredientDto of updateProductDto.ingredients) {
-        if (!ingredientDto.ingredientId || ingredientDto.quantity <= 0 || !ingredientDto.unit) {
-          throw new BadRequestException('Each ingredient must have a valid ID, positive quantity, and unit');
-        }
-        const ingredient = await this.ingredientsService.findOne(ingredientDto.ingredientId);
-        if (!ingredient) throw new BadRequestException(`Ingredient ${ingredientDto.ingredientId} not found`);
-
-        const lineCost = this.calculateLineCost(ingredient, ingredientDto.quantity, ingredientDto.unit);
-        totalCost += lineCost;
-
-        const productIngredient = this.productIngredientsRepository.create({
-          product,
-          ingredient,
-          quantity: ingredientDto.quantity,
-          unit: ingredientDto.unit,
-          line_cost: lineCost,
-          is_optional: ingredientDto.is_optional || false,
-        });
-        await this.productIngredientsRepository.save(productIngredient);
+    if (updateProductDto.sell_price) {
+      if (updateProductDto.sell_price <= 0) {
+        throw new BadRequestException('Sell price must be positive');
       }
-      product.total_cost = totalCost;
-      product.margin_amount = product.sell_price - totalCost;
-      product.margin_percent = product.sell_price > 0 ? (product.margin_amount / product.sell_price) * 100 : 0;
-      product.status = this.calculateStatus(product.margin_amount);
-    } else {
-      product.margin_amount = product.sell_price - product.total_cost;
-      product.margin_percent = product.sell_price > 0 ? (product.margin_amount / product.sell_price) * 100 : 0;
-      product.status = this.calculateStatus(product.margin_amount);
+      product.sell_price = updateProductDto.sell_price;
     }
 
-    return this.productsRepository.save(product);
+    // Handle ingredient updates within a transaction
+    let totalCost = 0;
+    const productIngredients: ProductIngredient[] = [];
+
+    if (updateProductDto.ingredients) {
+      await this.entityManager.transaction(async (transactionalEntityManager) => {
+        await transactionalEntityManager.delete(ProductIngredient, { product: { id } });
+
+        for (const ingredientDto of updateProductDto.ingredients || []) {
+          if (!ingredientDto.ingredientId || ingredientDto.quantity <= 0 || !ingredientDto.unit) {
+            throw new BadRequestException('Each ingredient must have a valid ID, positive quantity, and unit');
+          }
+          const ingredient = await this.ingredientsService.findOne(ingredientDto.ingredientId);
+          if (!ingredient) throw new BadRequestException(`Ingredient ${ingredientDto.ingredientId} not found`);
+
+          const stockDeduction = ingredientDto.quantity;
+          const stock = await this.getAvailableStock(ingredient, ingredientDto.unit, stockDeduction);
+          if (!stock) {
+            throw new BadRequestException(`Insufficient stock for ingredient ${ingredientDto.ingredientId} after update.`);
+          }
+          const deductionInStockUnit = this.convertQuantity(stockDeduction, ingredientDto.unit, stock.unit);
+          if (stock.remaining_quantity < deductionInStockUnit) {
+            throw new BadRequestException(`Insufficient stock. Required: ${deductionInStockUnit.toFixed(2)} ${stock.unit}, Available: ${stock.remaining_quantity.toFixed(2)} ${stock.unit}`);
+          }
+          stock.remaining_quantity -= deductionInStockUnit;
+          await transactionalEntityManager.save(Stock, stock);
+
+          const trueCost = this.calculateTrueCost(ingredient, ingredientDto.unit);
+          const lineCost = Number((ingredientDto.quantity * trueCost).toFixed(2));
+          totalCost += lineCost;
+
+          const productIngredient = transactionalEntityManager.create(ProductIngredient, {
+            product,
+            ingredient,
+            quantity: ingredientDto.quantity,
+            unit: ingredientDto.unit,
+            line_cost: lineCost,
+            is_optional: ingredientDto.is_optional || false,
+            name: ingredient.name,
+            cost_per_unit: trueCost,
+          });
+          productIngredients.push(productIngredient);
+        }
+
+        product.ingredients = productIngredients;
+        product.total_cost = Number(totalCost.toFixed(2));
+      });
+    } else {
+      // Recalculate total_cost if ingredients are not updated but sell_price is
+      let totalCost = 0;
+      for (const pi of product.ingredients) {
+        const trueCost = this.calculateTrueCost(pi.ingredient, pi.unit);
+        totalCost += pi.quantity * trueCost;
+      }
+      product.total_cost = Number(totalCost.toFixed(2));
+    }
+
+    // Recalculate margins and status with the latest values
+    if (product.sell_price <= 0 || product.total_cost < 0) {
+      throw new BadRequestException('Invalid sell price or total cost');
+    }
+    product.margin_amount = Number((product.sell_price - product.total_cost).toFixed(2));
+    product.margin_percent = this.calculateCappedMarginPercent(product.sell_price, product.total_cost);
+    product.status = this.calculateStatus(product.margin_amount);
+
+    // Save the product and refresh the entity
+    const savedProduct = await this.productRepository.save(product);
+    const refreshedProduct = await this.productRepository.findOneOrFail({ where: { id: savedProduct.id }, relations: ['ingredients'] });
+
+    // Update ingredients with the refreshed product reference
+    for (const productIngredient of refreshedProduct.ingredients) {
+      productIngredient.product = refreshedProduct;
+      productIngredient.productId = refreshedProduct.id;
+      await this.productIngredientRepository.save(productIngredient);
+    }
+
+    return classToPlain(refreshedProduct) as Product;
   }
 
   /**
@@ -174,8 +309,8 @@ export class ProductsService {
    */
   async remove(id: string): Promise<void> {
     const product = await this.findOne(id);
-    await this.productIngredientsRepository.delete({ product: { id } });
-    await this.productsRepository.delete(id);
+    await this.productIngredientRepository.delete({ product: { id } });
+    await this.productRepository.delete(id);
   }
 
   /**
@@ -195,7 +330,7 @@ export class ProductsService {
 
       const newSellPrice = product.sell_price + whatIfDto.priceAdjustment;
       const newMarginAmount = newSellPrice - product.total_cost;
-      const newMarginPercent = newSellPrice > 0 ? (newMarginAmount / newSellPrice) * 100 : 0;
+      const newMarginPercent = this.calculateCappedMarginPercent(newSellPrice, product.total_cost);
       const newStatus = this.calculateStatus(newMarginAmount);
 
       results.push({
@@ -221,7 +356,7 @@ export class ProductsService {
 
     const product = await this.findOne(milkSwapDto.productId);
     const originalTotalCost = product.total_cost || 0;
-    const originalMargin = originalTotalCost > 0 ? ((product.sell_price - originalTotalCost) / product.sell_price) * 100 : 0;
+    const originalMargin = this.calculateCappedMarginPercent(product.sell_price, originalTotalCost);
 
     let newTotalCost = 0;
     for (const pi of product.ingredients) {
@@ -233,7 +368,7 @@ export class ProductsService {
       newTotalCost += this.calculateLineCost(ingredient, pi.quantity, pi.unit);
     }
 
-    const newMargin = newTotalCost > 0 ? ((product.sell_price - newTotalCost) / product.sell_price) * 100 : 0;
+    const newMargin = this.calculateCappedMarginPercent(product.sell_price, newTotalCost);
     const upchargeCovered = milkSwapDto.upcharge 
       ? (product.sell_price + milkSwapDto.upcharge - newTotalCost) >= 0 
       : newMargin >= 0;
@@ -261,16 +396,16 @@ export class ProductsService {
 
     product.sell_price = quickActionDto.new_sell_price;
     product.margin_amount = product.sell_price - (product.total_cost || 0);
-    product.margin_percent = product.sell_price > 0 ? (product.margin_amount / product.sell_price) * 100 : 0;
+    product.margin_percent = this.calculateCappedMarginPercent(product.sell_price, product.total_cost);
     product.status = this.calculateStatus(product.margin_amount);
 
-    return this.productsRepository.save(product);
+    return this.productRepository.save(product);
   }
 
   /**
    * Calculates the cost of an ingredient based on quantity and unit.
    * @param ingredient Ingredient data
-   * @param quantity Quantity used
+   * @param quantity Quantity requested
    * @param unit Unit of measurement
    * @returns Line cost
    */
@@ -295,6 +430,12 @@ export class ProductsService {
     return 'losing money';
   }
 
+  /**
+   * Calculates the true cost of an ingredient adjusted for waste, considering quantity and unit.
+   * @param ingredient Ingredient data
+   * @param unit Unit of measurement
+   * @returns True cost per unit
+   */
   private calculateTrueCost(ingredient: Ingredient, unit: string): number {
     const wastePercent = ingredient.waste_percent || 0;
     if (wastePercent < 0 || wastePercent > 100) {
@@ -308,14 +449,16 @@ export class ProductsService {
     let baseCost = 0;
     if (unit.toLowerCase().includes('ml') || unit.toLowerCase().includes('l')) {
       baseCost = ingredient.cost_per_ml || 0;
+      return Number((baseCost / usablePercentage).toFixed(6)); // Cost per ml adjusted for waste
     } else if (unit.toLowerCase().includes('g') || unit.toLowerCase().includes('kg')) {
       baseCost = ingredient.cost_per_gram || 0;
+      return Number((baseCost / usablePercentage).toFixed(6)); // Cost per gram adjusted for waste
     } else if (unit.toLowerCase().includes('unit')) {
       baseCost = ingredient.cost_per_unit || 0;
+      return Number((baseCost / usablePercentage).toFixed(6)); // Cost per unit adjusted for waste
     } else {
       throw new BadRequestException('Unsupported unit. Use ml, L, g, kg, or unit');
     }
-    return baseCost / usablePercentage;
   }
 
   /**
@@ -329,7 +472,7 @@ export class ProductsService {
   private async getAvailableStock(ingredient: Ingredient, requestedUnit: string, requestedQuantity: number): Promise<Stock> {
     console.log(`Checking stock for ingredient ${ingredient.id}, requested: ${requestedQuantity} ${requestedUnit}`);
     const ingredientWithStocks = await this.ingredientsService.findOne(ingredient.id); // Fetch ingredient
-    const stocks = await this.stockRepository.find({ where: { ingredient: { id: ingredient.id } } }); // Fetch stocks manually
+    const stocks = await this.stockRepository.find({ where: { ingredient: { id: ingredient.id } }, order: { purchased_at: 'ASC' } }); // Fetch stocks, oldest first
     console.log(`Stocks found:`, stocks);
     for (const stock of stocks) {
       console.log(`Evaluating stock ${stock.id}: remaining ${stock.remaining_quantity} ${stock.unit}`);
@@ -356,6 +499,9 @@ export class ProductsService {
    * @returns Updated stock
    */
   private async updateStock(stock: Stock): Promise<Stock> {
+    if (stock.remaining_quantity < 0) {
+      throw new BadRequestException('Remaining quantity cannot be negative');
+    }
     return this.stockRepository.save(stock);
   }
 
@@ -371,21 +517,23 @@ export class ProductsService {
     const fromLower = fromUnit.toLowerCase();
     const toLower = toUnit.toLowerCase();
 
-    if (fromLower === toLower) return quantity;
+    if (fromLower === toLower) return Number(quantity.toFixed(2));
 
-    if (fromLower === 'ml' && toLower === 'l') {
-      return quantity / 1000; // ml to L
-    } else if (fromLower === 'l' && toLower === 'ml') {
-      return quantity * 1000; // L to ml
-    } else if (fromLower === 'g' && toLower === 'kg') {
-      return quantity / 1000; // g to kg
-    } else if (fromLower === 'kg' && toLower === 'g') {
-      return quantity * 1000; // kg to g
-    } else if (fromLower.includes('unit') && toLower.includes('unit')) {
-      return quantity;
-    } else {
-      throw new BadRequestException(`Incompatible units: ${fromUnit} and ${toUnit}`);
+    const conversionFactors: { [key: string]: number } = {
+      ml: 1,
+      l: 1000,
+      g: 1,
+      kg: 1000,
+    };
+    const fromFactor = conversionFactors[fromLower.replace(/s$/, '')] || 1;
+    const toFactor = conversionFactors[toLower.replace(/s$/, '')] || 1;
+
+    if (fromLower.includes('unit') && toLower.includes('unit')) return Number(quantity.toFixed(2));
+    if (fromFactor && toFactor) {
+      const converted = (quantity * fromFactor) / toFactor;
+      return Number(converted.toFixed(2));
     }
+    throw new BadRequestException(`Incompatible units: ${fromUnit} and ${toUnit}`);
   }
 
   /**
@@ -401,5 +549,17 @@ export class ProductsService {
            (u1 === 'l' && u2 === 'ml') || (u1 === 'ml' && u2 === 'l') ||
            (u1 === 'kg' && u2 === 'g') || (u1 === 'g' && u2 === 'kg') ||
            (u1.includes('unit') && u2.includes('unit'));
+  }
+
+  /**
+   * Calculates margin percent with a cap to prevent numeric overflow.
+   * @param sellPrice Sell price of the product
+   * @param totalCost Total cost of ingredients
+   * @returns Capped margin percent
+   */
+  private calculateCappedMarginPercent(sellPrice: number, totalCost: number): number {
+    if (sellPrice <= 0) return 0; // Avoid division by zero
+    const marginPercent = ((sellPrice - totalCost) / sellPrice) * 100;
+    return Math.min(Math.max(marginPercent, -999.99), 999.99); // Cap to fit NUMERIC(5,2)
   }
 }

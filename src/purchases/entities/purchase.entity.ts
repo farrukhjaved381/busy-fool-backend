@@ -22,7 +22,11 @@ export class Purchase {
   quantity: number;
 
   @Column('decimal', { precision: 10, scale: 2 })
-  @ApiProperty({ description: 'Total purchase cost' })
+  @ApiProperty({ description: 'Price per unit of the purchase' })
+  purchasePrice: number; // Added to track per-unit price
+
+  @Column('decimal', { precision: 10, scale: 2 })
+  @ApiProperty({ description: 'Total cost of the purchase' })
   total_cost: number;
 
   @CreateDateColumn()

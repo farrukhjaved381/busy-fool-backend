@@ -1,4 +1,4 @@
-import { IsString, IsNumber, Min, IsArray, IsOptional, ValidateNested } from 'class-validator';
+import { IsString, IsNumber, Min, IsArray, IsOptional, ValidateNested, IsBoolean } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -17,6 +17,7 @@ class IngredientDetail {
   unit: string;
 
   @IsOptional()
+  @IsBoolean()
   @ApiProperty({ description: 'Whether the ingredient is optional', example: false, required: false })
   is_optional?: boolean;
 }

@@ -14,9 +14,11 @@ import { Ingredient } from './ingredients/entities/ingredient.entity';
 import { Product } from './products/entities/product.entity';
 import { ProductIngredient } from './products/entities/product-ingredient.entity';
 import { Sale } from './sales/entities/sale.entity';
+import { Stock } from './stock/entities/stock.entity';
 import { StockModule } from './stock/stock.module';
 import { AnalyticsModule } from './analytics/analytics.module';
-
+import  { WasteModule } from './waste/waste.module';
+import { Waste } from './waste/entities/waste.entity';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -46,6 +48,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
     PurchasesModule,
     AnalyticsModule,
     StockModule,
+    WasteModule,
   ],
   controllers: [AppController],
   providers: [AppService],

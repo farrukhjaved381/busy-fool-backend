@@ -6,6 +6,16 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import * as path from 'path';
 import * as multer from 'multer';
 import * as fs from 'fs';
+import { AuthModule } from './auth/auth.module';
+import { UsersModule } from './users/users.module';
+import { IngredientsModule } from './ingredients/ingredients.module';
+import { ProductsModule } from './products/products.module';
+import { SalesModule } from './sales/sales.module';
+import { PurchasesModule } from './purchases/purchases.module';
+import { StockModule } from './stock/stock.module';
+import { AnalyticsModule } from './analytics/analytics.module';
+import { WasteModule } from './waste/waste.module';
+
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -21,8 +31,18 @@ async function bootstrap() {
     .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }, 'JWT')
     .build();
   const document = SwaggerModule.createDocument(app, config, {
-    deepScanRoutes: true,
-    extraModels: [], // Add models if needed
+    include: [
+      AppModule,
+      AuthModule,
+      UsersModule,
+      IngredientsModule,
+      ProductsModule,
+      SalesModule,
+      PurchasesModule,
+      StockModule,
+      AnalyticsModule,
+      WasteModule,
+    ],
   });
   SwaggerModule.setup('api', app, document, {
     swaggerOptions: { persistAuthorization: true },
