@@ -1,3 +1,4 @@
+
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -21,31 +22,31 @@ export class PurchasesService {
   async create(createPurchaseDto: CreatePurchaseDto, userId: string): Promise<Purchase> {
     const user = await this.usersService.findById(userId);
     if (!user) throw new BadRequestException('User not found');
-  
+
     const { ingredientId, quantity, unit, purchasePrice } = createPurchaseDto;
     if (quantity <= 0 || purchasePrice < 0) throw new BadRequestException('Invalid quantity or price');
-  
+
     const ingredient = await this.ingredientsService.findOne(ingredientId);
     if (!ingredient) throw new NotFoundException(`Ingredient ${ingredientId} not found`);
-  
-    // Use purchasePrice as total cost directly
+
+    // Convert quantity to ingredient's base unit for consistency
+    const normalizedQuantity = await this.stockService.convertQuantity(quantity, unit, ingredient.unit);
     const totalPurchasedPrice = Number(purchasePrice.toFixed(2));
-    const purchasePricePerUnit = Number((purchasePrice / quantity).toFixed(4)); // Per unit of purchased quantity
+    const purchasePricePerUnit = Number((totalPurchasedPrice / normalizedQuantity).toFixed(4)); // Per unit of ingredient's base unit
     const wastePercent = ingredient.waste_percent || 0;
     const usablePercentage = 1 - (wastePercent / 100);
-    const normalizedQuantity = await this.stockService.convertQuantity(quantity, unit, ingredient.unit);
     const remainingQuantity = Number((normalizedQuantity * usablePercentage).toFixed(2));
-  
+
     const purchase = this.purchaseRepository.create({
       ingredient,
-      quantity,
-      purchasePrice: purchasePricePerUnit, // Store per-unit price
+      quantity: normalizedQuantity, // Store in base unit
+      purchasePrice: purchasePricePerUnit, // Per unit of base unit
       total_cost: totalPurchasedPrice,
       user,
     });
-  
+
     const savedPurchase = await this.purchaseRepository.save(purchase);
-  
+
     // Create or update stock
     const existingStocks = await this.stockService.findAllByIngredientId(ingredientId);
     let stockToUpdate: Stock | undefined;
@@ -55,15 +56,20 @@ export class PurchasesService {
         break;
       }
     }
-  
+
     if (stockToUpdate) {
-      const convertedQuantity = Number(await this.stockService.convertQuantity(quantity, unit, stockToUpdate.unit));
-      if (isNaN(convertedQuantity)) throw new BadRequestException(`Invalid conversion for quantity ${quantity} from ${unit} to ${stockToUpdate.unit}`);
+      const convertedQuantity = await this.stockService.convertQuantity(quantity, unit, stockToUpdate.unit);
       const newRemaining = Number((Number(stockToUpdate.remaining_quantity) + (convertedQuantity * usablePercentage)).toFixed(2));
       const totalPurchased = Number((Number(stockToUpdate.purchased_quantity) + convertedQuantity).toFixed(2));
-      const weightedPricePerUnit = Number((((Number(stockToUpdate.purchase_price_per_unit) || 0) * Number(stockToUpdate.purchased_quantity)) + (purchasePricePerUnit * convertedQuantity / (quantity / normalizedQuantity))).toFixed(4));
+
+      // Recalculate weighted average in base unit
+      const existingTotalCost = Number(stockToUpdate.purchase_price_per_unit) * Number(stockToUpdate.purchased_quantity);
+      const newTotalCost = totalPurchasedPrice;
+      const totalQuantity = Number(stockToUpdate.purchased_quantity) + normalizedQuantity;
+      const weightedPricePerUnit = Number(((existingTotalCost + newTotalCost) / totalQuantity).toFixed(4));
+
       const newTotalPurchasedPrice = Number((Number(stockToUpdate.total_purchased_price || 0) + totalPurchasedPrice).toFixed(2));
-  
+
       await this.stockService.update(stockToUpdate.id, {
         remaining_quantity: newRemaining,
         purchased_quantity: totalPurchased,
@@ -75,8 +81,8 @@ export class PurchasesService {
     } else {
       await this.stockService.create({
         ingredient,
-        purchased_quantity: quantity,
-        unit,
+        purchased_quantity: normalizedQuantity,
+        unit: ingredient.unit, // Use ingredient's base unit
         purchase_price_per_unit: purchasePricePerUnit,
         total_purchased_price: totalPurchasedPrice,
         waste_percent: wastePercent,
@@ -85,7 +91,7 @@ export class PurchasesService {
         purchased_at: new Date(),
       });
     }
-  
+
     return savedPurchase;
   }
 

@@ -1,3 +1,4 @@
+
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -27,16 +28,16 @@ export class StockService {
   }
 
   async convertQuantity(quantity: number, fromUnit: string, toUnit: string): Promise<number> {
-    const fromLower = fromUnit.toLowerCase();
-    const toLower = toUnit.toLowerCase();
+    const fromLower = fromUnit.toLowerCase().replace(/s$/, '');
+    const toLower = toUnit.toLowerCase().replace(/s$/, '');
 
     if (fromLower === toLower) return Number(quantity.toFixed(2));
 
     const conversionFactors: { [key: string]: number } = { ml: 1, l: 1000, g: 1, kg: 1000 };
-    const fromFactor = conversionFactors[fromLower.replace(/s$/, '')] || 1;
-    const toFactor = conversionFactors[toLower.replace(/s$/, '')] || 1;
+    const fromFactor = conversionFactors[fromLower] || 1;
+    const toFactor = conversionFactors[toLower] || 1;
 
-    if (fromLower.includes('unit') && toLower.includes('unit')) return Number(quantity.toFixed(2));
+    if (fromLower === 'unit' && toLower === 'unit') return Number(quantity.toFixed(2));
     if (fromFactor && toFactor) {
       const converted = (quantity * fromFactor) / toFactor;
       return Number(converted.toFixed(2));
@@ -45,18 +46,16 @@ export class StockService {
   }
 
   async getAvailableStock(ingredientId: string): Promise<number> {
-    const stocks = await this.stockRepository.find({ where: { ingredient: { id: ingredientId } } });
-    return stocks.reduce((sum, stock) => sum + (Number(stock.remaining_quantity) ?? 0), 0); // ⬅ Fix here
+    const stocks = await this.findAllByIngredientId(ingredientId);
+    return stocks.reduce((sum, stock) => sum + (Number(stock.remaining_quantity) || 0), 0);
   }
-  
 
   isCompatibleUnit(unit1: string, unit2: string): boolean {
-    const u1 = unit1.toLowerCase();
-    const u2 = unit2.toLowerCase();
-    return u1 === u2 || // Same unit (case-insensitive)
-           (u1 === 'l' && u2 === 'ml') || (u1 === 'ml' && u2 === 'l') ||
+    const u1 = unit1.toLowerCase().replace(/s$/, '');
+    const u2 = unit2.toLowerCase().replace(/s$/, '');
+    return u1 === u2 || (u1 === 'l' && u2 === 'ml') || (u1 === 'ml' && u2 === 'l') ||
            (u1 === 'kg' && u2 === 'g') || (u1 === 'g' && u2 === 'kg') ||
-           (u1.includes('unit') && u2.includes('unit'));
+           (u1 === 'unit' && u2 === 'unit');
   }
 
   async update(id: string, updateData: Partial<Stock>): Promise<Stock> {
