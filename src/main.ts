@@ -15,6 +15,7 @@ import { PurchasesModule } from './purchases/purchases.module';
 import { StockModule } from './stock/stock.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { WasteModule } from './waste/waste.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 
 
 async function bootstrap() {
@@ -42,6 +43,7 @@ async function bootstrap() {
       StockModule,
       AnalyticsModule,
       WasteModule,
+      DashboardModule,
     ],
   });
   SwaggerModule.setup('api', app, document, {

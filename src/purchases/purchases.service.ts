@@ -21,19 +21,21 @@ export class PurchasesService {
   async create(createPurchaseDto: CreatePurchaseDto, userId: string): Promise<Purchase> {
     const user = await this.usersService.findById(userId);
     if (!user) throw new BadRequestException('User not found');
-
+  
     const { ingredientId, quantity, unit, purchasePrice } = createPurchaseDto;
     if (quantity <= 0 || purchasePrice < 0) throw new BadRequestException('Invalid quantity or price');
-
+  
     const ingredient = await this.ingredientsService.findOne(ingredientId);
     if (!ingredient) throw new NotFoundException(`Ingredient ${ingredientId} not found`);
-
-    const totalPurchasedPrice = Number((quantity * purchasePrice).toFixed(2));
-    const purchasePricePerUnit = Number((purchasePrice).toFixed(4)); // Maintain precision for per-unit cost
+  
+    // Use purchasePrice as total cost directly
+    const totalPurchasedPrice = Number(purchasePrice.toFixed(2));
+    const purchasePricePerUnit = Number((purchasePrice / quantity).toFixed(4)); // Per unit of purchased quantity
     const wastePercent = ingredient.waste_percent || 0;
     const usablePercentage = 1 - (wastePercent / 100);
-    const remainingQuantity = quantity * usablePercentage;
-
+    const normalizedQuantity = await this.stockService.convertQuantity(quantity, unit, ingredient.unit);
+    const remainingQuantity = Number((normalizedQuantity * usablePercentage).toFixed(2));
+  
     const purchase = this.purchaseRepository.create({
       ingredient,
       quantity,
@@ -41,9 +43,9 @@ export class PurchasesService {
       total_cost: totalPurchasedPrice,
       user,
     });
-
+  
     const savedPurchase = await this.purchaseRepository.save(purchase);
-
+  
     // Create or update stock
     const existingStocks = await this.stockService.findAllByIngredientId(ingredientId);
     let stockToUpdate: Stock | undefined;
@@ -53,18 +55,20 @@ export class PurchasesService {
         break;
       }
     }
-
+  
     if (stockToUpdate) {
-      const newRemaining = stockToUpdate.remaining_quantity + (quantity * (await this.stockService.convertQuantity(1, unit, stockToUpdate.unit)) * usablePercentage);
-      const totalPurchased = stockToUpdate.purchased_quantity + quantity;
-      const weightedPricePerUnit = ((stockToUpdate.purchase_price_per_unit * stockToUpdate.purchased_quantity) + (purchasePricePerUnit * quantity)) / totalPurchased;
-      const newTotalPurchasedPrice = Number(stockToUpdate.total_purchased_price || 0) + totalPurchasedPrice;
-
+      const convertedQuantity = Number(await this.stockService.convertQuantity(quantity, unit, stockToUpdate.unit));
+      if (isNaN(convertedQuantity)) throw new BadRequestException(`Invalid conversion for quantity ${quantity} from ${unit} to ${stockToUpdate.unit}`);
+      const newRemaining = Number((Number(stockToUpdate.remaining_quantity) + (convertedQuantity * usablePercentage)).toFixed(2));
+      const totalPurchased = Number((Number(stockToUpdate.purchased_quantity) + convertedQuantity).toFixed(2));
+      const weightedPricePerUnit = Number((((Number(stockToUpdate.purchase_price_per_unit) || 0) * Number(stockToUpdate.purchased_quantity)) + (purchasePricePerUnit * convertedQuantity / (quantity / normalizedQuantity))).toFixed(4));
+      const newTotalPurchasedPrice = Number((Number(stockToUpdate.total_purchased_price || 0) + totalPurchasedPrice).toFixed(2));
+  
       await this.stockService.update(stockToUpdate.id, {
         remaining_quantity: newRemaining,
         purchased_quantity: totalPurchased,
-        purchase_price_per_unit: Number(weightedPricePerUnit.toFixed(4)),
-        total_purchased_price: Number(newTotalPurchasedPrice.toFixed(2)),
+        purchase_price_per_unit: weightedPricePerUnit,
+        total_purchased_price: newTotalPurchasedPrice,
         waste_percent: wastePercent,
         updated_at: new Date(),
       });
@@ -81,7 +85,7 @@ export class PurchasesService {
         purchased_at: new Date(),
       });
     }
-
+  
     return savedPurchase;
   }
 

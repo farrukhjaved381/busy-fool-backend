@@ -25,71 +25,75 @@ export class ProductsService {
     private readonly entityManager: EntityManager,
   ) {}
 
-  /**
-   * Creates a new product with associated ingredients and calculates costs and margins.
-   * @param createProductDto Data for the new product
-   * @returns The created product
-   * @throws BadRequestException if an ingredient is not found or input is invalid
-   */
-  async create(createProductDto: CreateProductDto): Promise<Product> {
-    if (!createProductDto.name || !createProductDto.category || createProductDto.sell_price <= 0) {
-      throw new BadRequestException('Name, category, and positive sell price are required');
-    }
-
-    let totalCost = 0;
-    const productIngredients: ProductIngredient[] = [];
-
-    for (const ingredientDto of createProductDto.ingredients || []) {
-      if (!ingredientDto.ingredientId || ingredientDto.quantity <= 0 || !ingredientDto.unit) {
-        throw new BadRequestException('Each ingredient must have a valid ID, positive quantity, and unit');
-      }
-      const ingredient = await this.ingredientsService.findOne(ingredientDto.ingredientId);
-      if (!ingredient) throw new BadRequestException(`Ingredient ${ingredientDto.ingredientId} not found`);
-
-      const trueCost = this.calculateTrueCost(ingredient, ingredientDto.unit);
-      const lineCost = ingredientDto.quantity * trueCost;
-      totalCost += lineCost;
-
-      const stock = await this.getAvailableStock(ingredient, ingredientDto.unit, ingredientDto.quantity);
-      if (!stock) {
-        throw new BadRequestException(`No available stock for ingredient ${ingredientDto.ingredientId} and unit ${ingredientDto.unit}.`);
-      }
-      stock.remaining_quantity -= this.convertQuantity(ingredientDto.quantity, ingredientDto.unit, stock.unit);
-      await this.updateStock(stock);
-
-      const productIngredient = this.productIngredientRepository.create({
-        ingredient,
-        quantity: ingredientDto.quantity,
-        unit: ingredientDto.unit,
-        line_cost: lineCost,
-        is_optional: ingredientDto.is_optional || false,
-        name: ingredient.name,
-        cost_per_unit: trueCost,
-      });
-      productIngredients.push(productIngredient);
-    }
-
-    const product = this.productRepository.create({
-      name: createProductDto.name,
-      category: createProductDto.category,
-      sell_price: createProductDto.sell_price,
-      total_cost: totalCost,
-      margin_amount: createProductDto.sell_price - totalCost,
-      margin_percent: this.calculateCappedMarginPercent(createProductDto.sell_price, totalCost),
-      status: this.calculateStatus(createProductDto.sell_price - totalCost),
-      ingredients: productIngredients,
-    });
-
-    const savedProduct = await this.productRepository.save(product);
-
-    for (const productIngredient of productIngredients) {
-      productIngredient.product = savedProduct;
-      productIngredient.productId = savedProduct.id;
-      await this.productIngredientRepository.save(productIngredient);
-    }
-
-    return classToPlain(savedProduct) as Product;
+/**
+ * Creates a new product with associated ingredients and calculates costs and margins.
+ * @param createProductDto Data for the new product
+ * @returns The created product
+ * @throws BadRequestException if an ingredient is not found, stock is insufficient, or input is invalid
+ */
+async create(createProductDto: CreateProductDto): Promise<Product> {
+  if (!createProductDto.name || !createProductDto.category || createProductDto.sell_price <= 0) {
+    throw new BadRequestException('Name, category, and positive sell price are required');
   }
+
+  let totalCost = 0;
+  const productIngredients: ProductIngredient[] = [];
+
+  for (const ingredientDto of createProductDto.ingredients || []) {
+    if (!ingredientDto.ingredientId || ingredientDto.quantity <= 0 || !ingredientDto.unit) {
+      throw new BadRequestException('Each ingredient must have a valid ID, positive quantity, and unit');
+    }
+    const ingredient = await this.ingredientsService.findOne(ingredientDto.ingredientId);
+    if (!ingredient) throw new BadRequestException(`Ingredient ${ingredientDto.ingredientId} not found`);
+
+    const trueCost = this.calculateTrueCost(ingredient, ingredientDto.unit);
+    const lineCost = ingredientDto.quantity * trueCost;
+    totalCost += lineCost;
+
+    const stock = await this.getAvailableStock(ingredient, ingredientDto.unit, ingredientDto.quantity);
+    if (!stock || stock.remaining_quantity <= 0) {
+      throw new BadRequestException(`No available stock for ingredient ${ingredientDto.ingredientId} and unit ${ingredientDto.unit}.`);
+    }
+    const deductionInStockUnit = this.convertQuantity(ingredientDto.quantity, ingredientDto.unit, stock.unit);
+    if (stock.remaining_quantity < deductionInStockUnit) {
+      throw new BadRequestException(`Insufficient stock. Required: ${deductionInStockUnit.toFixed(2)} ${stock.unit}, Available: ${stock.remaining_quantity.toFixed(2)} ${stock.unit}`);
+    }
+    stock.remaining_quantity -= deductionInStockUnit;
+    await this.updateStock(stock);
+
+    const productIngredient = this.productIngredientRepository.create({
+      ingredient,
+      quantity: ingredientDto.quantity,
+      unit: ingredientDto.unit,
+      line_cost: lineCost,
+      is_optional: ingredientDto.is_optional || false,
+      name: ingredient.name,
+      cost_per_unit: trueCost,
+    });
+    productIngredients.push(productIngredient);
+  }
+
+  const product = this.productRepository.create({
+    name: createProductDto.name,
+    category: createProductDto.category,
+    sell_price: createProductDto.sell_price,
+    total_cost: totalCost,
+    margin_amount: createProductDto.sell_price - totalCost,
+    margin_percent: this.calculateCappedMarginPercent(createProductDto.sell_price, totalCost),
+    status: this.calculateStatus(createProductDto.sell_price - totalCost),
+    ingredients: productIngredients,
+  });
+
+  const savedProduct = await this.productRepository.save(product);
+
+  for (const productIngredient of productIngredients) {
+    productIngredient.product = savedProduct;
+    productIngredient.productId = savedProduct.id;
+    await this.productIngredientRepository.save(productIngredient);
+  }
+
+  return classToPlain(savedProduct) as Product;
+}
 
   /**
    * Creates or updates stock for an ingredient.
@@ -313,72 +317,84 @@ export class ProductsService {
     await this.productRepository.delete(id);
   }
 
-  /**
-   * Simulates the impact of price changes on multiple products.
-   * @param whatIfDto Price adjustment data
-   * @returns Array of impact results
-   */
-  async whatIf(whatIfDto: WhatIfDto): Promise<{ productId: string; newMargin: number; newStatus: string }[]> {
-    if (!whatIfDto.productIds?.length || whatIfDto.priceAdjustment === undefined) {
-      throw new BadRequestException('Product IDs and price adjustment are required');
-    }
-
-    const results = [];
-    for (const productId of whatIfDto.productIds) {
-      const product = await this.findOne(productId).catch(() => null);
-      if (!product) continue;
-
-      const newSellPrice = product.sell_price + whatIfDto.priceAdjustment;
-      const newMarginAmount = newSellPrice - product.total_cost;
-      const newMarginPercent = this.calculateCappedMarginPercent(newSellPrice, product.total_cost);
-      const newStatus = this.calculateStatus(newMarginAmount);
-
-      results.push({
-        productId,
-        newMargin: parseFloat(newMarginPercent.toFixed(2)),
-        newStatus,
-      });
-    }
-    return results;
+/**
+ * Simulates the impact of price changes on multiple products.
+ * @param whatIfDto Price adjustment data
+ * @returns Array of impact results
+ */
+async whatIf(whatIfDto: WhatIfDto): Promise<{ productId: string; newMargin: number; newStatus: string }[]> {
+  if (!whatIfDto.productIds?.length || whatIfDto.priceAdjustment === undefined) {
+    throw new BadRequestException('Product IDs and price adjustment are required');
   }
 
-  /**
-   * Calculates the margin impact of swapping an ingredient.
-   * @param milkSwapDto Swap data
-   * @returns Margin impact details
-   * @throws NotFoundException if product or ingredient is not found
-   * @throws BadRequestException if input is invalid
-   */
-  async milkSwap(milkSwapDto: MilkSwapDto): Promise<{ originalMargin: number; newMargin: number; upchargeCovered: boolean }> {
-    if (!milkSwapDto.productId || !milkSwapDto.originalIngredientId || !milkSwapDto.newIngredientId) {
-      throw new BadRequestException('Product ID, original ingredient ID, and new ingredient ID are required');
-    }
+  const results = [];
+  for (const productId of whatIfDto.productIds) {
+    const product = await this.findOne(productId).catch(() => null);
+    if (!product) continue;
 
-    const product = await this.findOne(milkSwapDto.productId);
-    const originalTotalCost = product.total_cost || 0;
-    const originalMargin = this.calculateCappedMarginPercent(product.sell_price, originalTotalCost);
+    const sellPrice = Number(product.sell_price);
+    const totalCost = Number(product.total_cost);
+    const priceAdjustment = Number(whatIfDto.priceAdjustment);
+    console.log(`whatIf: Product ${productId} - sell_price=${sellPrice}, total_cost=${totalCost}, priceAdjustment=${priceAdjustment}`);
+    const originalMargin = Number((sellPrice - totalCost).toFixed(2));
+    const newSellPrice = Number((sellPrice + priceAdjustment).toFixed(2));
+    if (newSellPrice <= 0) continue; // Skip invalid sell prices
+    const newMarginAmount = Number((newSellPrice - totalCost).toFixed(2)); // Direct margin amount
+    console.log(`whatIf: originalMargin=${originalMargin}, newSellPrice=${newSellPrice}, newMargin=${newMarginAmount}`);
+    const newStatus = this.calculateStatus(newMarginAmount);
 
-    let newTotalCost = 0;
-    for (const pi of product.ingredients) {
-      let ingredient = pi.ingredient;
-      if (pi.ingredient.id === milkSwapDto.originalIngredientId) {
-        ingredient = await this.ingredientsService.findOne(milkSwapDto.newIngredientId);
-        if (!ingredient) throw new NotFoundException(`Ingredient ${milkSwapDto.newIngredientId} not found`);
-      }
-      newTotalCost += this.calculateLineCost(ingredient, pi.quantity, pi.unit);
-    }
-
-    const newMargin = this.calculateCappedMarginPercent(product.sell_price, newTotalCost);
-    const upchargeCovered = milkSwapDto.upcharge 
-      ? (product.sell_price + milkSwapDto.upcharge - newTotalCost) >= 0 
-      : newMargin >= 0;
-
-    return {
-      originalMargin: parseFloat(originalMargin.toFixed(2)),
-      newMargin: parseFloat(newMargin.toFixed(2)),
-      upchargeCovered,
-    };
+    results.push({
+      productId,
+      newMargin: newMarginAmount, // Return margin amount
+      newStatus,
+    });
   }
+  return results;
+}
+
+/**
+ * Calculates the margin impact of swapping an ingredient.
+ * @param milkSwapDto Swap data
+ * @returns Margin impact details
+ * @throws NotFoundException if product or ingredient is not found
+ * @throws BadRequestException if input is invalid
+ */
+async milkSwap(milkSwapDto: MilkSwapDto): Promise<{ originalMargin: number; newMargin: number; upchargeCovered: boolean }> {
+  if (!milkSwapDto.productId || !milkSwapDto.originalIngredientId || !milkSwapDto.newIngredientId) {
+    throw new BadRequestException('Product ID, original ingredient ID, and new ingredient ID are required');
+  }
+
+  const product = await this.findOne(milkSwapDto.productId);
+  const sellPrice = Number(product.sell_price);
+  const originalTotalCost = Number(product.total_cost || 0);
+  const originalMarginAmount = Number((sellPrice - originalTotalCost).toFixed(2)); // Direct margin amount
+  console.log(`milkSwap: Product ${product.id} - sell_price=${sellPrice}, originalTotalCost=${originalTotalCost}, originalMargin=${originalMarginAmount}`);
+
+  let newTotalCost = 0;
+  for (const pi of product.ingredients) {
+    let ingredient = pi.ingredient;
+    if (pi.ingredient.id === milkSwapDto.originalIngredientId) {
+      ingredient = await this.ingredientsService.findOne(milkSwapDto.newIngredientId);
+      if (!ingredient) throw new NotFoundException(`Ingredient ${milkSwapDto.newIngredientId} not found`);
+    }
+    const lineCost = Number(this.calculateLineCost(ingredient, pi.quantity, pi.unit).toFixed(2));
+    newTotalCost += lineCost;
+    console.log(`milkSwap: Ingredient ${pi.ingredient.id} - quantity=${pi.quantity}, unit=${pi.unit}, lineCost=${lineCost}`);
+  }
+  newTotalCost = Number(newTotalCost.toFixed(2));
+
+  const upcharge = Number(milkSwapDto.upcharge || 0);
+  const adjustedSellPrice = Number((sellPrice + upcharge).toFixed(2));
+  const newMarginAmount = Number((adjustedSellPrice - newTotalCost).toFixed(2)); // Margin with upcharge
+  const upchargeCovered = adjustedSellPrice - newTotalCost >= 0;
+  console.log(`milkSwap: newTotalCost=${newTotalCost}, newMargin=${newMarginAmount}, adjustedSellPrice=${adjustedSellPrice}, upchargeCovered=${upchargeCovered}`);
+
+  return {
+    originalMargin: originalMarginAmount, // Return original margin
+    newMargin: newMarginAmount, // Return margin with upcharge
+    upchargeCovered,
+  };
+}
 
   /**
    * Applies a quick action (e.g., price change) to a product.
@@ -461,37 +477,41 @@ export class ProductsService {
     }
   }
 
-  /**
-   * Retrieves the latest available stock batch for an ingredient with unit conversion.
-   * @param ingredient Ingredient data
-   * @param requestedUnit Unit requested by the product
-   * @param requestedQuantity Quantity requested
-   * @returns The stock batch with sufficient remaining quantity
-   * @throws NotFoundException if no suitable stock is found
-   */
-  private async getAvailableStock(ingredient: Ingredient, requestedUnit: string, requestedQuantity: number): Promise<Stock> {
-    console.log(`Checking stock for ingredient ${ingredient.id}, requested: ${requestedQuantity} ${requestedUnit}`);
-    const ingredientWithStocks = await this.ingredientsService.findOne(ingredient.id); // Fetch ingredient
-    const stocks = await this.stockRepository.find({ where: { ingredient: { id: ingredient.id } }, order: { purchased_at: 'ASC' } }); // Fetch stocks, oldest first
-    console.log(`Stocks found:`, stocks);
-    for (const stock of stocks) {
-      console.log(`Evaluating stock ${stock.id}: remaining ${stock.remaining_quantity} ${stock.unit}`);
-      if (this.isCompatibleUnit(requestedUnit, stock.unit)) {
-        const requestedInStockUnit = this.convertQuantity(requestedQuantity, requestedUnit, stock.unit);
-        console.log(`Converted request: ${requestedQuantity} ${requestedUnit} = ${requestedInStockUnit} ${stock.unit}`);
-        if (stock.remaining_quantity >= requestedInStockUnit) {
-          console.log(`Stock ${stock.id} is sufficient`);
-          return stock;
-        } else {
-          console.log(`Stock ${stock.id} insufficient: ${stock.remaining_quantity} < ${requestedInStockUnit}`);
-        }
-      } else {
-        console.log(`Units ${requestedUnit} and ${stock.unit} are incompatible`);
+/**
+ * Retrieves the latest available stock batch for an ingredient with unit conversion.
+ * @param ingredient Ingredient data
+ * @param requestedUnit Unit requested by the product
+ * @param requestedQuantity Quantity requested
+ * @returns The stock batch with sufficient remaining quantity
+ * @throws BadRequestException if no suitable stock is found or quantity is insufficient
+ */
+private async getAvailableStock(ingredient: Ingredient, requestedUnit: string, requestedQuantity: number): Promise<Stock> {
+  console.log(`Checking stock for ingredient ${ingredient.id}, requested: ${requestedQuantity} ${requestedUnit}`);
+  const ingredientWithStocks = await this.ingredientsService.findOne(ingredient.id); // Fetch ingredient
+  const stocks = await this.stockRepository.find({ where: { ingredient: { id: ingredient.id } }, order: { purchased_at: 'ASC' } }); // Fetch stocks, oldest first
+  console.log(`Stocks found:`, stocks);
+  for (const stock of stocks) {
+    console.log(`Evaluating stock ${stock.id}: remaining ${stock.remaining_quantity} ${stock.unit}`);
+    if (this.isCompatibleUnit(requestedUnit, stock.unit)) {
+      const requestedInStockUnit = this.convertQuantity(requestedQuantity, requestedUnit, stock.unit);
+      console.log(`Converted request: ${requestedQuantity} ${requestedUnit} = ${requestedInStockUnit} ${stock.unit}`);
+      if (stock.remaining_quantity <= 0) {
+        console.log(`Stock ${stock.id} has no remaining quantity`);
+        continue; // Skip if no stock remains
       }
+      if (stock.remaining_quantity >= requestedInStockUnit) {
+        console.log(`Stock ${stock.id} is sufficient`);
+        return stock;
+      } else {
+        console.log(`Stock ${stock.id} insufficient: ${stock.remaining_quantity} < ${requestedInStockUnit}`);
+      }
+    } else {
+      console.log(`Units ${requestedUnit} and ${stock.unit} are incompatible`);
     }
-    console.log(`No suitable stock found for ${ingredient.id}`);
-    throw new BadRequestException('No available stock for this ingredient and unit.');
   }
+  console.log(`No suitable stock found for ${ingredient.id}`);
+  throw new BadRequestException(`No available stock for ingredient ${ingredient.id} and unit ${requestedUnit}.`);
+}
 
   /**
    * Updates a stock batch with new remaining quantity.
@@ -505,36 +525,36 @@ export class ProductsService {
     return this.stockRepository.save(stock);
   }
 
-  /**
-   * Converts a quantity between compatible units.
-   * @param quantity Quantity to convert
-   * @param fromUnit Source unit
-   * @param toUnit Target unit
-   * @returns Converted quantity
-   * @throws BadRequestException if units are incompatible
-   */
-  public convertQuantity(quantity: number, fromUnit: string, toUnit: string): number {
-    const fromLower = fromUnit.toLowerCase();
-    const toLower = toUnit.toLowerCase();
+/**
+ * Converts a quantity between compatible units with higher precision.
+ * @param quantity Quantity to convert
+ * @param fromUnit Source unit
+ * @param toUnit Target unit
+ * @returns Converted quantity
+ * @throws BadRequestException if units are incompatible
+ */
+public convertQuantity(quantity: number, fromUnit: string, toUnit: string): number {
+  const fromLower = fromUnit.toLowerCase();
+  const toLower = toUnit.toLowerCase();
 
-    if (fromLower === toLower) return Number(quantity.toFixed(2));
+  if (fromLower === toLower) return Number(quantity.toFixed(6)); // Use higher precision
 
-    const conversionFactors: { [key: string]: number } = {
-      ml: 1,
-      l: 1000,
-      g: 1,
-      kg: 1000,
-    };
-    const fromFactor = conversionFactors[fromLower.replace(/s$/, '')] || 1;
-    const toFactor = conversionFactors[toLower.replace(/s$/, '')] || 1;
+  const conversionFactors: { [key: string]: number } = {
+    ml: 1,
+    l: 1000,
+    g: 1,
+    kg: 1000,
+  };
+  const fromFactor = conversionFactors[fromLower.replace(/s$/, '')] || 1;
+  const toFactor = conversionFactors[toLower.replace(/s$/, '')] || 1;
 
-    if (fromLower.includes('unit') && toLower.includes('unit')) return Number(quantity.toFixed(2));
-    if (fromFactor && toFactor) {
-      const converted = (quantity * fromFactor) / toFactor;
-      return Number(converted.toFixed(2));
-    }
-    throw new BadRequestException(`Incompatible units: ${fromUnit} and ${toUnit}`);
+  if (fromLower.includes('unit') && toLower.includes('unit')) return Number(quantity.toFixed(6));
+  if (fromFactor && toFactor) {
+    const converted = (quantity * fromFactor) / toFactor;
+    return Number(converted.toFixed(6)); // Use 6 decimal places for precision
   }
+  throw new BadRequestException(`Incompatible units: ${fromUnit} and ${toUnit}`);
+}
 
   /**
    * Checks if two units are compatible for conversion.

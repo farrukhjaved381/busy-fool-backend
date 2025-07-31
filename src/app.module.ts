@@ -1,4 +1,3 @@
-// src/app.module.ts
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
@@ -22,6 +21,7 @@ import { StockModule } from './stock/stock.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { WasteModule } from './waste/waste.module';
 import { Waste } from './waste/entities/waste.entity';
+import { DashboardModule } from './dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -43,7 +43,7 @@ import { Waste } from './waste/entities/waste.entity';
         },
         entities: ['dist/**/*.entity.js'],
         synchronize: true,
-        logging: false,
+        logging: true,
       }),
       inject: [ConfigService],
     }),
@@ -65,6 +65,7 @@ import { Waste } from './waste/entities/waste.entity';
     AnalyticsModule,
     StockModule,
     WasteModule,
+    DashboardModule,
   ],
   controllers: [AppController],
   providers: [AppService],
