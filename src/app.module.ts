@@ -1,7 +1,10 @@
+// src/app.module.ts
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { JwtModule } from '@nestjs/jwt';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
+import { PassportModule } from '@nestjs/passport';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
@@ -17,8 +20,9 @@ import { Sale } from './sales/entities/sale.entity';
 import { Stock } from './stock/entities/stock.entity';
 import { StockModule } from './stock/stock.module';
 import { AnalyticsModule } from './analytics/analytics.module';
-import  { WasteModule } from './waste/waste.module';
+import { WasteModule } from './waste/waste.module';
 import { Waste } from './waste/entities/waste.entity';
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -34,9 +38,21 @@ import { Waste } from './waste/entities/waste.entity';
         username: configService.get('DB_USER'),
         password: configService.get('DB_PASSWORD'),
         database: configService.get('DB_NAME'),
-        entities: ['dist/**/*.entity.js'], // Use compiled output
+        ssl: {
+          rejectUnauthorized: false, // required for Neon
+        },
+        entities: ['dist/**/*.entity.js'],
         synchronize: true,
-        logging: true,
+        logging: false,
+      }),
+      inject: [ConfigService],
+    }),
+    PassportModule.register({ defaultStrategy: 'jwt' }),
+    JwtModule.registerAsync({
+      imports: [ConfigModule],
+      useFactory: async (configService: ConfigService) => ({
+        secret: configService.get('JWT_SECRET'),
+        signOptions: { expiresIn: configService.get('JWT_EXPIRES_IN') },
       }),
       inject: [ConfigService],
     }),

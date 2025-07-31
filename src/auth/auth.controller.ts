@@ -1,3 +1,4 @@
+// src/auth/auth.controller.ts
 import { Controller, Post, Body, Get, Patch, Request, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { CreateUserDto } from '../users/dto/create-user.dto';
@@ -15,12 +16,7 @@ export class AuthController {
 
   @Post('register')
   @ApiOperation({ summary: 'Register a new user' })
-  @ApiResponse({ status: 201, description: 'User registered successfully', type: AuthResponseDto, example: {
-    accessToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    fullName: "John Doe",
-    email: "john.doe@example.com",
-    role: "owner"
-  }})
+  @ApiResponse({ status: 201, description: 'User registered successfully', type: AuthResponseDto })
   @ApiResponse({ status: 400, description: 'Bad request (e.g., email already registered or invalid data)' })
   @ApiBody({
     schema: {
@@ -40,12 +36,7 @@ export class AuthController {
 
   @Post('login')
   @ApiOperation({ summary: 'Login a user' })
-  @ApiResponse({ status: 200, description: 'User logged in successfully', type: AuthResponseDto, example: {
-    accessToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    fullName: "John Doe",
-    email: "john.doe@example.com",
-    role: "owner"
-  }})
+  @ApiResponse({ status: 200, description: 'User logged in successfully', type: AuthResponseDto })
   @ApiResponse({ status: 401, description: 'Unauthorized (invalid credentials)' })
   @ApiBody({
     schema: {
@@ -63,17 +54,9 @@ export class AuthController {
 
   @UseGuards(JwtAuthGuard)
   @Get('profile')
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT') // Explicitly reference the 'JWT' scheme
   @ApiOperation({ summary: 'Get user profile' })
-  @ApiResponse({ status: 200, description: 'User profile retrieved successfully', type: User, example: {
-    id: "550e8400-e29b-41d4-a716-446655440000",
-    name: "John Doe",
-    email: "john.doe@example.com",
-    password: "$2b$10$hashedpassword...",
-    role: "owner",
-    created_at: "2025-07-24T10:00:00Z",
-    last_updated: "2025-07-24T10:00:00Z"
-  }})
+  @ApiResponse({ status: 200, description: 'User profile retrieved successfully', type: User })
   @ApiResponse({ status: 401, description: 'Unauthorized (missing or invalid JWT)' })
   @ApiResponse({ status: 404, description: 'User not found' })
   getProfile(@Request() req: any) {
@@ -82,17 +65,9 @@ export class AuthController {
 
   @UseGuards(JwtAuthGuard)
   @Patch('profile')
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT') // Explicitly reference the 'JWT' scheme
   @ApiOperation({ summary: 'Update user profile' })
-  @ApiResponse({ status: 200, description: 'User profile updated successfully', type: User, example: {
-    id: "550e8400-e29b-41d4-a716-446655440000",
-    name: "John Doe Updated",
-    email: "john.doe@example.com",
-    password: "$2b$10$hashedpassword...",
-    role: "owner",
-    created_at: "2025-07-24T10:00:00Z",
-    last_updated: "2025-07-24T10:30:00Z"
-  }})
+  @ApiResponse({ status: 200, description: 'User profile updated successfully', type: User })
   @ApiResponse({ status: 400, description: 'Bad request (e.g., invalid data)' })
   @ApiResponse({ status: 401, description: 'Unauthorized (missing or invalid JWT)' })
   @ApiResponse({ status: 404, description: 'User not found' })
@@ -113,7 +88,7 @@ export class AuthController {
 
   @UseGuards(JwtAuthGuard)
   @Post('logout')
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT') // Explicitly reference the 'JWT' scheme
   @ApiOperation({ summary: 'Logout a user' })
   @ApiResponse({ status: 200, description: 'User logged out successfully' })
   @ApiResponse({ status: 401, description: 'Unauthorized (missing or invalid JWT)' })

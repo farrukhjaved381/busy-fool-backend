@@ -1,3 +1,4 @@
+// src/auth/auth.service.ts
 import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -23,13 +24,10 @@ export class AuthService {
       throw new BadRequestException('Email already registered');
     }
 
-    const user = this.usersRepository.create({
-      ...createUserDto,
-      // password: hashedPassword, // Remove manual hashing
-    });
-    await this.usersRepository.save(user);
+    const user = this.usersRepository.create(createUserDto); // Creates entity, triggers BeforeInsert
+    await this.usersRepository.save(user); // Saves with hashed password
 
-    const payload = { email: user.email, sub: user.id, role: user.role };
+    const payload = { sub: user.id, email: user.email, role: user.role };
     const accessToken = this.jwtService.sign(payload);
 
     return {
@@ -46,7 +44,7 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const payload = { email: user.email, sub: user.id, role: user.role };
+    const payload = { sub: user.id, email: user.email, role: user.role };
     const accessToken = this.jwtService.sign(payload);
 
     return {
@@ -80,8 +78,6 @@ export class AuthService {
   }
 
   async logout(userId: string): Promise<void> {
-    // Invalidate token by storing it in a blacklist (implement Redis or DB-based blacklist if needed)
-    // For simplicity, we're not implementing token blacklisting here, but you can extend this
-    return;
+    return; // Placeholder; implement token blacklisting if needed
   }
 }
