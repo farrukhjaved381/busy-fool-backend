@@ -42,7 +42,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
           rejectUnauthorized: false, // required for Neon
         },
         entities: ['dist/**/*.entity.js'],
-        synchronize: true,
+        synchronize: false,
         logging: true,
       }),
       inject: [ConfigService],

@@ -7,7 +7,9 @@ import {
   UseGuards, 
   Request, 
   HttpCode, 
-  HttpStatus 
+  HttpStatus, 
+  Delete, 
+  Param
 } from '@nestjs/common';
 import { SalesService } from './sales.service';
 import { CreateSaleDto } from './dto/create-sale.dto';
@@ -91,6 +93,15 @@ export class SalesController {
   @ApiResponse({ status: HttpStatus.FORBIDDEN, description: 'Forbidden (non-owner role)' })
   async findAll() {
     return this.salesService.findAll();
+  }
+
+  @Delete(':id')
+  @Roles(UserRole.OWNER)
+  @ApiOperation({ summary: 'Delete a sale by ID' })
+  @ApiResponse({ status: 200, description: 'Sale deleted.' })
+  @ApiResponse({ status: 404, description: 'Sale not found.' })
+  async remove(@Param('id') id: string) {
+    return this.salesService.remove(id);
   }
 
   @Get('dashboard')

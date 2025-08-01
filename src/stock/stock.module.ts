@@ -9,6 +9,6 @@ import { IngredientsModule } from '../ingredients/ingredients.module';
   imports: [TypeOrmModule.forFeature([Stock]), IngredientsModule],
   controllers: [StockController],
   providers: [StockService],
-  exports: [StockService],
+  exports: [StockService, TypeOrmModule],
 })
 export class StockModule {}

@@ -16,6 +16,7 @@ import { StockModule } from './stock/stock.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { WasteModule } from './waste/waste.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { ConfigService } from '@nestjs/config';
 
 
 async function bootstrap() {
@@ -70,6 +71,13 @@ async function bootstrap() {
 
   // Enable CORS
   app.enableCors();
+
+  const configService = app.get(ConfigService);
+  console.log(`DB_HOST: ${configService.get('DB_HOST')}`);
+  console.log(`DB_PORT: ${configService.get('DB_PORT')}`);
+  console.log(`DB_USER: ${configService.get('DB_USER')}`);
+  console.log(`DB_NAME: ${configService.get('DB_NAME')}`);
+
   await app.listen(3006);
   console.log(`Application is running on: http://localhost:3006`);
   console.log(`Swagger UI is available at: http://localhost:3006/api`);

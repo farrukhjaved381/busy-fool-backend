@@ -9,9 +9,11 @@ import {
   UseGuards, 
   HttpCode, 
   BadRequestException,
-  HttpStatus 
+  HttpStatus,
+  Req
 } from '@nestjs/common';
 import { ProductsService } from './products.service';
+import { GetMaxProducibleQuantityResponseDto } from './dto/maxProducible-quantity-response.dto';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { WhatIfDto } from './dto/what-if.dto';
@@ -243,6 +245,16 @@ export class ProductsController {
   @ApiResponse({ status: HttpStatus.FORBIDDEN, description: 'Forbidden (non-owner role)' })
   async milkSwap(@Body() milkSwapDto: MilkSwapDto): Promise<{ originalMargin: number; newMargin: number; upchargeCovered: boolean }> {
     return this.productsService.milkSwap(milkSwapDto);
+  }
+
+  @Post('max-producible')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Get maximum producible quantity for a product based on stock' })
+  @ApiResponse({ status: 200, description: 'Returns max producible quantity and stock updates', type: GetMaxProducibleQuantityResponseDto })
+  @ApiResponse({ status: 400, description: 'Bad Request - Invalid product ID or insufficient stock' })
+  @ApiResponse({ status: 401, description: 'Unauthorized - JWT token required' })
+  async getMaxProducibleQuantity(@Body('productId') productId: string, @Req() req: Request): Promise<GetMaxProducibleQuantityResponseDto> {
+    return this.productsService.getMaxProducibleQuantity(productId);
   }
 
   @Post(':id/quick-action')

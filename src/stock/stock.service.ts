@@ -58,6 +58,11 @@ export class StockService {
            (u1 === 'unit' && u2 === 'unit');
   }
 
+  async remove(id: string): Promise<void> {
+    const stock = await this.findOne(id);
+    await this.stockRepository.remove(stock);
+  }
+
   async update(id: string, updateData: Partial<Stock>): Promise<Stock> {
     const stock = await this.findOne(id);
     Object.assign(stock, updateData);

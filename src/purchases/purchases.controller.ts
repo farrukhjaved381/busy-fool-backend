@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, UseGuards, Request, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Body, Get, UseGuards, Request, HttpCode, HttpStatus, Delete, Param } from '@nestjs/common';
 import { PurchasesService } from './purchases.service';
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
@@ -46,6 +46,15 @@ export class PurchasesController {
   @HttpCode(HttpStatus.CREATED)
   async create(@Body() createPurchaseDto: CreatePurchaseDto, @Request() req: any) {
     return this.purchasesService.create(createPurchaseDto, req.user.sub);
+  }
+
+  @Delete(':id')
+  @Roles(UserRole.OWNER)
+  @ApiOperation({ summary: 'Delete a purchase by ID' })
+  @ApiResponse({ status: 200, description: 'Purchase deleted.' })
+  @ApiResponse({ status: 404, description: 'Purchase not found.' })
+  async remove(@Param('id') id: string) {
+    return this.purchasesService.remove(id);
   }
 
   @Get()

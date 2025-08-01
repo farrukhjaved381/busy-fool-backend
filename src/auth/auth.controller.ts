@@ -1,13 +1,15 @@
-// src/auth/auth.controller.ts
-import { Controller, Post, Body, Get, Patch, Request, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Body, Get, Patch, Request, UseGuards, HttpCode, HttpStatus, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { AuthService } from './auth.service';
 import { CreateUserDto } from '../users/dto/create-user.dto';
 import { UpdateUserDto } from '../users/dto/update-user.dto';
 import { LoginDto } from './dto/login.dto';
 import { AuthResponseDto } from './dto/auth-response.dto';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiBody, ApiConsumes } from '@nestjs/swagger';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { User } from '../users/user.entity';
+import { diskStorage } from 'multer';
+import { extname } from 'path';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -54,7 +56,7 @@ export class AuthController {
 
   @UseGuards(JwtAuthGuard)
   @Get('profile')
-  @ApiBearerAuth('JWT') // Explicitly reference the 'JWT' scheme
+  @ApiBearerAuth('JWT')
   @ApiOperation({ summary: 'Get user profile' })
   @ApiResponse({ status: 200, description: 'User profile retrieved successfully', type: User })
   @ApiResponse({ status: 401, description: 'Unauthorized (missing or invalid JWT)' })
@@ -65,7 +67,7 @@ export class AuthController {
 
   @UseGuards(JwtAuthGuard)
   @Patch('profile')
-  @ApiBearerAuth('JWT') // Explicitly reference the 'JWT' scheme
+  @ApiBearerAuth('JWT')
   @ApiOperation({ summary: 'Update user profile' })
   @ApiResponse({ status: 200, description: 'User profile updated successfully', type: User })
   @ApiResponse({ status: 400, description: 'Bad request (e.g., invalid data)' })
@@ -77,7 +79,12 @@ export class AuthController {
       properties: {
         name: { type: 'string', example: 'John Doe Updated', nullable: true },
         email: { type: 'string', example: 'john.doe.updated@example.com', nullable: true },
-        password: { type: 'string', example: 'newsecurepassword123', nullable: true }
+        password: { type: 'string', example: 'newsecurepassword123', nullable: true },
+        profilePicture: { type: 'string', example: 'https://example.com/newpic.jpg', nullable: true },
+        phoneNumber: { type: 'string', example: '+9876543210', nullable: true },
+        address: { type: 'string', example: '456 Tea Lane, Brewtown', nullable: true },
+        bio: { type: 'string', example: 'Tea lover and coder', nullable: true },
+        dateOfBirth: { type: 'string', format: 'date', example: '1990-01-01', nullable: true }
       },
       required: []
     }
@@ -87,8 +94,28 @@ export class AuthController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Post('upload-profile-picture')
+  @UseInterceptors(
+    FileInterceptor('profilePicture', {
+      storage: diskStorage({
+        destination: './uploads',
+        filename: (req, file, cb) => {
+          const randomName = Array(32)
+            .fill(null)
+            .map(() => Math.round(Math.random() * 16).toString(16))
+            .join('');
+          cb(null, `${randomName}${extname(file.originalname)}`);
+        },
+      }),
+    }),
+  )
+  uploadProfilePicture(@Request() req: any, @UploadedFile() file: Express.Multer.File) {
+    return this.authService.uploadProfilePicture(req.user.sub, file);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Post('logout')
-  @ApiBearerAuth('JWT') // Explicitly reference the 'JWT' scheme
+  @ApiBearerAuth('JWT')
   @ApiOperation({ summary: 'Logout a user' })
   @ApiResponse({ status: 200, description: 'User logged out successfully' })
   @ApiResponse({ status: 401, description: 'Unauthorized (missing or invalid JWT)' })

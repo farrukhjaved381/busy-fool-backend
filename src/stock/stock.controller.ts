@@ -1,4 +1,4 @@
-import { Controller, Get, Param, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Param, UseGuards, Request, Delete } from '@nestjs/common';
 import { StockService } from './stock.service';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -29,6 +29,15 @@ export class StockController {
   @ApiResponse({ status: 404, description: 'Stock batch not found.' })
   async findOne(@Param('id') id: string) {
     return this.stockService.findOne(id);
+  }
+
+  @Delete(':id')
+  @Roles(UserRole.OWNER)
+  @ApiOperation({ summary: 'Delete a stock batch by ID' })
+  @ApiResponse({ status: 200, description: 'Stock batch deleted.' })
+  @ApiResponse({ status: 404, description: 'Stock batch not found.' })
+  async remove(@Param('id') id: string) {
+    return this.stockService.remove(id);
   }
 
   @Get('ingredient/:ingredientId')

@@ -1,4 +1,3 @@
-// src/auth/auth.service.ts
 import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -74,6 +73,16 @@ export class AuthService {
     }
 
     Object.assign(user, updateUserDto);
+    return this.usersRepository.save(user);
+  }
+
+  async uploadProfilePicture(userId: string, file: Express.Multer.File): Promise<User> {
+    const user = await this.usersRepository.findOneBy({ id: userId });
+    if (!user) {
+      throw new BadRequestException('User not found');
+    }
+
+    user.profilePicture = file.filename;
     return this.usersRepository.save(user);
   }
 

@@ -1,4 +1,3 @@
-
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -32,7 +31,7 @@ export class PurchasesService {
     // Convert quantity to ingredient's base unit for consistency
     const normalizedQuantity = await this.stockService.convertQuantity(quantity, unit, ingredient.unit);
     const totalPurchasedPrice = Number(purchasePrice.toFixed(2));
-    const purchasePricePerUnit = Number((totalPurchasedPrice / normalizedQuantity).toFixed(4)); // Per unit of ingredient's base unit
+    const purchasePricePerUnit = Number((totalPurchasedPrice / normalizedQuantity).toFixed(4)); // Per unit of base unit
     const wastePercent = ingredient.waste_percent || 0;
     const usablePercentage = 1 - (wastePercent / 100);
     const remainingQuantity = Number((normalizedQuantity * usablePercentage).toFixed(2));
@@ -40,7 +39,7 @@ export class PurchasesService {
     const purchase = this.purchaseRepository.create({
       ingredient,
       quantity: normalizedQuantity, // Store in base unit
-      purchasePrice: purchasePricePerUnit, // Per unit of base unit
+      purchasePrice: purchasePricePerUnit, // Per unit price of this purchase
       total_cost: totalPurchasedPrice,
       user,
     });
@@ -93,6 +92,14 @@ export class PurchasesService {
     }
 
     return savedPurchase;
+  }
+
+  async remove(id: string): Promise<void> {
+    const purchase = await this.purchaseRepository.findOneBy({ id });
+    if (!purchase) {
+      throw new NotFoundException(`Purchase with ID ${id} not found`);
+    }
+    await this.purchaseRepository.remove(purchase);
   }
 
   async findAll(): Promise<Purchase[]> {
