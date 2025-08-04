@@ -15,7 +15,7 @@ export const AppDataSource = new DataSource({
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
   ssl: process.env.DB_SSL === 'true',
-  synchronize: false, // Reverted to false, as manual migration is needed
+  synchronize: false, // Best practice with migrations
   logging: true,
   entities: ['dist/**/*.entity.js'], // Use compiled output
   migrations: ['dist/migrations/*.js'],
