@@ -11,6 +11,10 @@ import { Purchase } from '../purchases/entities/purchase.entity';
 import { StockService } from '../stock/stock.service';
 import { Waste } from '../waste/entities/waste.entity';
 import { Stock } from '../stock/entities/stock.entity'; // Import Stock entity
+import { Product } from '../products/entities/product.entity';
+import { ImportSalesUnmatched } from './entities/import-sales.entity';
+
+
 
 @Injectable()
 export class SalesService {
@@ -20,7 +24,11 @@ export class SalesService {
     @InjectRepository(ProductIngredient) private productIngredientsRepository: Repository<ProductIngredient>,
     @InjectRepository(Purchase) private purchasesRepository: Repository<Purchase>,
     @InjectRepository(Waste) private wasteRepository: Repository<Waste>,
-    @InjectRepository(Stock) private stockRepository: Repository<Stock>, // Add Stock repository
+    @InjectRepository(Stock) private stockRepository: Repository<Stock>,
+    @InjectRepository(Product) private productRepository: Repository<Product>,
+@InjectRepository(Sale) private saleRepository: Repository<Sale>,
+@InjectRepository(ImportSalesUnmatched) private unmatchedRepository: Repository<ImportSalesUnmatched>,
+ // Add Stock repository
     private productsService: ProductsService,
     private usersService: UsersService,
     private readonly stockService: StockService,
@@ -305,4 +313,5 @@ export class SalesService {
       ],
     };
   }
+ 
 }

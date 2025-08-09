@@ -16,6 +16,6 @@ import { Stock } from '../stock/entities/stock.entity';
   ],
   controllers: [ProductsController],
   providers: [ProductsService],
-  exports: [ProductsService],
+  exports: [ProductsService, TypeOrmModule],
 })
 export class ProductsModule {}

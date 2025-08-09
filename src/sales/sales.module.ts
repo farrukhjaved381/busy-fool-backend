@@ -11,14 +11,19 @@ import { ProductsModule } from '../products/products.module';
 import { UsersModule } from '../users/users.module';
 import { StockModule } from '../stock/stock.module';
 import { WasteModule } from '../waste/waste.module';
+import { CsvMappingsModule } from '../csv_mappings/csv_mappings.module';
+import { CsvMappings } from '../csv_mappings/entities/csv-mappings.entity';
+
+import { ImportSalesUnmatched } from './entities/import-sales.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Sale, Ingredient, ProductIngredient, Purchase, Waste]),
+    TypeOrmModule.forFeature([Sale, Ingredient, ProductIngredient, Purchase, Waste, ImportSalesUnmatched, CsvMappings]),
     ProductsModule,
     UsersModule,
     StockModule,
     WasteModule, // Add this to import WasteRepository
+    CsvMappingsModule,
   ],
   controllers: [SalesController],
   providers: [SalesService],

@@ -29,7 +29,7 @@ export class Sale {
   @ApiProperty({ description: 'Total sale amount (quantity × sell_price)' })
   total_amount: number;
 
-  @CreateDateColumn()
-  @ApiProperty({ description: 'Date of the sale' })
-  sale_date: Date;
+  @Column({ type: 'timestamp', nullable: true })
+  @ApiProperty({ description: 'Date of the sale (optional)', required: false })
+  sale_date: Date | null;
 }

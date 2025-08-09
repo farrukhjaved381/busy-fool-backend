@@ -22,6 +22,9 @@ import { AnalyticsModule } from './analytics/analytics.module';
 import { WasteModule } from './waste/waste.module';
 import { Waste } from './waste/entities/waste.entity';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { CsvMappingsController } from './csv_mappings/csv_mappings.controller';
+import { CsvMappingsService } from './csv_mappings/csv_mappings.service';
+import { CsvMappingsModule } from './csv_mappings/csv_mappings.module';
 
 @Module({
   imports: [
@@ -66,6 +69,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
     StockModule,
     WasteModule,
     DashboardModule,
+    CsvMappingsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -16,6 +16,7 @@ import { StockModule } from './stock/stock.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { WasteModule } from './waste/waste.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { CsvMappingsModule } from './csv_mappings/csv_mappings.module';
 import { ConfigService } from '@nestjs/config';
 
 
@@ -45,6 +46,7 @@ async function bootstrap() {
       AnalyticsModule,
       WasteModule,
       DashboardModule,
+      CsvMappingsModule,
     ],
   });
   SwaggerModule.setup('api', app, document, {
