@@ -44,7 +44,7 @@ import { CsvMappingsModule } from './csv_mappings/csv_mappings.module';
         ssl: {
           rejectUnauthorized: false, // required for Neon
         },
-        entities: ['dist/**/*.entity.js'],
+        autoLoadEntities: true,
         synchronize: true,
         logging: true,
       }),

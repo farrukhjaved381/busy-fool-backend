@@ -10,7 +10,7 @@ export class Product {
   @ApiProperty({ description: 'Unique identifier for the product' })
   id: string;
 
-  @Column({ length: 100, nullable: false })
+  @Column({ length: 100, nullable: false, unique: true })
   @ApiProperty({ description: 'Name of the product', example: 'Coffee Latte' })
   name: string;
 
@@ -37,6 +37,10 @@ export class Product {
   @Column({ length: 20 })
   @ApiProperty({ description: 'Status of the product', example: 'profitable' })
   status: string;
+
+  @Column({ type: 'int', default: 0 })
+  @ApiProperty({ description: 'Total quantity of the product sold', example: 100, required: false })
+  quantity_sold: number;
 
   @CreateDateColumn()
   @ApiProperty({ description: 'Creation timestamp', example: '2025-07-24T11:15:00Z' })
