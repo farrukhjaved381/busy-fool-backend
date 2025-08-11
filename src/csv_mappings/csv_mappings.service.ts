@@ -4,22 +4,24 @@ import { Repository } from 'typeorm';
 import { CsvMappings } from './entities/csv-mappings.entity';
 import { Sale } from '../sales/entities/sale.entity';
 import { Product } from '../products/entities/product.entity';
-import * as fs from 'fs';
 import * as csvParser from 'fast-csv';
 import * as XLSX from 'xlsx';
+
+interface InsightRow {
+  productName: string;
+  quantitySold: number;
+  amount: number; // total amount for this CSV row
+  unitPrice: number;
+  saleDate: Date | null;
+  profit: number;
+  profitMargin: number; // % for this row
+}
 
 interface Insight {
   totalSales: number;
   totalProfit: number;
   avgProfitMargin: number;
-  rows: {
-    productName: string;
-    quantitySold: number;
-    salePrice: number; // Total amount for the row
-    unitPrice: number; // Calculated unit price
-    saleDate: Date | null;
-    profit: number;
-  }[];
+  rows: InsightRow[];
 }
 
 interface DailySales {
@@ -42,82 +44,90 @@ export class CsvMappingsService {
     private productRepository: Repository<Product>,
   ) {}
 
+  // -------------------------
+  // Helpers
+  // -------------------------
+  private parseNumber(value: any): number {
+    if (value === null || value === undefined || value === '') return 0;
+    if (typeof value === 'number') return value;
+    const s = String(value).trim();
+    // Remove currency symbols, spaces and thousands separators
+    const cleaned = s.replace(/[^\d.-]/g, '');
+    const parsed = parseFloat(cleaned);
+    return isNaN(parsed) ? 0 : parsed;
+  }
+
+  private normalizeHeader(header: string): string {
+    return header ? header.trim().toLowerCase() : header;
+  }
+
+  // -------------------------
+  // Read headers (CSV or XLSX)
+  // -------------------------
   async getCsvHeaders(filePath: string): Promise<string[]> {
     const fileExt = filePath.split('.').pop()?.toLowerCase();
-  
+
     if (fileExt === 'csv') {
       return new Promise((resolve, reject) => {
         csvParser
           .parseFile(filePath, { headers: true })
           .on('headers', (hdrs: string[]) => {
-            resolve(hdrs.map((h: string) => h.trim()));
+            resolve(hdrs.map(h => this.normalizeHeader(h)));
           })
           .on('error', reject);
       });
-    } 
-    else if (fileExt === 'xlsx' || fileExt === 'xls') {
-      const workbook = XLSX.readFile(filePath);
-      const sheetName = workbook.SheetNames[0]; // first sheet
-      const worksheet = workbook.Sheets[sheetName];
-      const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[];
-      if (!rows.length) throw new BadRequestException('No data found in Excel file.');
-      const headers = rows[0].map((h: string) => h.trim());
-      return headers;
-    } 
-    else {
+    } else if (fileExt === 'xlsx' || fileExt === 'xls') {
+      try {
+        const workbook = XLSX.readFile(filePath);
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const rawRows = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[];
+        if (!rawRows || rawRows.length === 0) throw new BadRequestException('No data found in Excel file.');
+        const headers = (rawRows[0] as any[]).map(h => this.normalizeHeader(String(h || '')));
+        return headers;
+      } catch (err) {
+        throw new BadRequestException('Failed to read Excel file: ' + (err?.message || err));
+      }
+    } else {
       throw new BadRequestException('Unsupported file format. Please upload .csv or .xlsx');
     }
   }
-  
 
-  async saveMapping(
-    userId: string,
-    mappings: { busyfoolColumn: string; posColumnName: string }[],
-  ) {
+  // -------------------------
+  // Save mapping
+  // -------------------------
+  async saveMapping(userId: string, mappings: { busyfoolColumn: string; posColumnName: string }[]) {
     await this.csvMappingRepository.delete({ user: { id: userId } });
 
-    const newMappings = mappings.map((m) =>
+    const newMappings = mappings.map(m =>
       this.csvMappingRepository.create({
         user: { id: userId },
         ourSystemColumn: m.busyfoolColumn,
-        posColumnName: m.posColumnName.trim(),
+        posColumnName: this.normalizeHeader(m.posColumnName),
       }),
     );
 
     return this.csvMappingRepository.save(newMappings);
   }
 
-  async importSales(filePath: string, userId: string, confirm: boolean) {
-    const mappings = await this.csvMappingRepository.find({
-      where: { user: { id: userId } },
-    });
-    if (!mappings.length)
-      throw new BadRequestException('No CSV mapping found for this user.');
-
-    const mappingDict = mappings.reduce(
-      (acc, m) => ({
-        ...acc,
-        [m.ourSystemColumn]: m.posColumnName.trim().toLowerCase(),
-      }),
-      {} as { [key: string]: string },
-    );
-
+  // -------------------------
+  // Parse file into normalized rows (lowercase headers)
+  // -------------------------
+  private async parseFileToRows(filePath: string): Promise<Record<string, any>[]> {
     const fileExt = filePath.split('.').pop()?.toLowerCase();
-    let dataRows: any[] = [];
 
     if (fileExt === 'csv') {
-      dataRows = await new Promise((resolve, reject) => {
-        const rows: any[] = [];
+      return new Promise<Record<string, any>[]>((resolve, reject) => {
+        const rows: Record<string, any>[] = [];
         csvParser
           .parseFile(filePath, { headers: true })
-          .on('data', (row) => {
-            const normalizedRow = Object.fromEntries(
-              Object.entries(row).map(([k, v]) => [
-                k.trim().toLowerCase(),
-                v,
-              ]),
-            );
-            rows.push(normalizedRow);
+          .on('data', (row: Record<string, any>) => {
+            const normalized: Record<string, any> = {};
+            Object.entries(row).forEach(([k, v]) => {
+              const key = this.normalizeHeader(String(k || ''));
+              normalized[key] = v;
+            });
+            rows.push(normalized);
           })
           .on('end', () => resolve(rows))
           .on('error', reject);
@@ -127,292 +137,279 @@ export class CsvMappingsService {
       const sheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
       const rawRows = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[];
-      const headers = rawRows[0].map((h: string) => h.trim().toLowerCase());
-      dataRows = rawRows.slice(1).map((row: any[]) => {
-        const rowObj: { [key: string]: any } = {};
-        headers.forEach((header: string, index: number) => {
-          rowObj[header] = row[index];
+      if (!rawRows || rawRows.length < 1) return [];
+      const headers = (rawRows[0] as any[]).map(h => this.normalizeHeader(String(h || '')));
+      const dataRows = rawRows.slice(1).map((r: any[]) => {
+        const obj: Record<string, any> = {};
+        headers.forEach((h, i) => {
+          obj[h] = r?.[i];
         });
-        return rowObj;
+        return obj;
       });
+      return dataRows;
     } else {
-      throw new BadRequestException(
-        'Unsupported file format. Please upload a .csv or .xlsx file.',
-      );
+      throw new BadRequestException('Unsupported file format.');
+    }
+  }
+
+  // -------------------------
+  // Import generic CSV sales (per-row Amount used)
+  // -------------------------
+  async importSales(filePath: string, userId: string, confirm = false): Promise<Insight> {
+    const mappings = await this.csvMappingRepository.find({ where: { user: { id: userId } } });
+    if (!mappings || mappings.length === 0) {
+      throw new BadRequestException('No CSV mapping found for this user.');
     }
 
+    const mappingDict = mappings.reduce((acc, m) => ({ ...acc, [m.ourSystemColumn]: m.posColumnName }), {} as Record<string, string>);
+
+    const dataRows = await this.parseFileToRows(filePath);
     return this._processData(dataRows, mappingDict, userId, confirm, filePath);
   }
 
-  async importDailySales(filePath: string, userId: string, confirm: boolean) {
-    const mappings = await this.csvMappingRepository.find({
-      where: { user: { id: userId } },
-    });
-    if (!mappings.length)
+  // -------------------------
+  // Import daily sales (uses filename date fallback)
+  // -------------------------
+  async importDailySales(filePath: string, userId: string, confirm = false): Promise<Insight> {
+    const mappings = await this.csvMappingRepository.find({ where: { user: { id: userId } } });
+    if (!mappings || mappings.length === 0) {
       throw new BadRequestException('No CSV mapping found for this user.');
-
-    const mappingDict = mappings.reduce(
-      (acc, m) => ({
-        ...acc,
-        [m.ourSystemColumn]: m.posColumnName.trim().toLowerCase(),
-      }),
-      {} as { [key: string]: string },
-    );
-
-    const fileExt = filePath.split('.').pop()?.toLowerCase();
-    let dataRows: any[] = [];
-
-    if (fileExt === 'csv') {
-      dataRows = await new Promise((resolve, reject) => {
-        const rows: any[] = [];
-        csvParser
-          .parseFile(filePath, { headers: true })
-          .on('data', (row) => {
-            const normalizedRow = Object.fromEntries(
-              Object.entries(row).map(([k, v]) => [
-                k.trim().toLowerCase(),
-                v,
-              ]),
-            );
-            rows.push(normalizedRow);
-          })
-          .on('end', () => resolve(rows))
-          .on('error', reject);
-      });
-    } else if (fileExt === 'xlsx' || fileExt === 'xls') {
-      const workbook = XLSX.readFile(filePath);
-      const sheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[sheetName];
-      const rawRows = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[];
-      const headers = rawRows[0].map((h: string) => h.trim().toLowerCase());
-      dataRows = rawRows.slice(1).map((row: any[]) => {
-        const rowObj: { [key: string]: any } = {};
-        headers.forEach((header: string, index: number) => {
-          rowObj[header] = row[index];
-        });
-        return rowObj;
-      });
-    } else {
-      throw new BadRequestException(
-        'Unsupported file format. Please upload a .csv or .xlsx file.',
-      );
     }
 
+    const mappingDict = mappings.reduce((acc, m) => ({ ...acc, [m.ourSystemColumn]: m.posColumnName }), {} as Record<string, string>);
+
+    const dataRows = await this.parseFileToRows(filePath);
     return this._processDailyData(dataRows, mappingDict, userId, confirm, filePath);
   }
 
+  // -------------------------
+  // Daily aggregation endpoint helper
+  // -------------------------
   async getDailySales(userId: string, startDate?: string, endDate?: string): Promise<DailySales[]> {
-    const query = this.saleRepository.createQueryBuilder('sale')
-      .select([
-        "DATE(sale.sale_date) as date",
-        "SUM(sale.total_amount) as totalSales",
-        "SUM((sale.total_amount - (product.total_cost * sale.quantity))) as totalProfit",
-        "SUM(sale.quantity) as itemsSold"
-      ])
-      .innerJoin('sale.product', 'product')
+    // Use repository query builder to aggregate by sale_date
+    const qb = this.saleRepository.createQueryBuilder('sale')
+      .leftJoin('sale.product', 'product')
+      .select("DATE(sale.sale_date)", 'date')
+      .addSelect("SUM(sale.total_amount)", 'totalSales')
+      .addSelect("SUM(sale.total_amount - (COALESCE(product.total_cost,0) * sale.quantity))", 'totalProfit')
+      .addSelect("SUM(sale.quantity)", 'itemsSold')
       .where('sale.userId = :userId', { userId })
       .groupBy("DATE(sale.sale_date)");
 
-    if (startDate) query.andWhere('sale.sale_date >= :startDate', { startDate: new Date(startDate) });
-    if (endDate) query.andWhere('sale.sale_date <= :endDate', { endDate: new Date(endDate) });
+    if (startDate) qb.andWhere('sale.sale_date >= :startDate', { startDate: new Date(startDate) });
+    if (endDate) qb.andWhere('sale.sale_date <= :endDate', { endDate: new Date(endDate) });
 
-    const results = await query.getRawMany();
-    return results.map(row => ({
-      date: row.date,
-      totalSales: parseFloat(row.totalSales) || 0,
-      totalProfit: parseFloat(row.totalProfit) || 0,
-      itemsSold: parseInt(row.itemsSold) || 0,
+    const rows = await qb.getRawMany();
+    return rows.map(r => ({
+      date: r.date,
+      totalSales: parseFloat(r.totalsales) || 0,
+      totalProfit: parseFloat(r.totalprofit) || 0,
+      itemsSold: parseInt(r.itemssold, 10) || 0,
     }));
   }
 
+  // -------------------------
+  // Core processing (generic importSales)
+  // -------------------------
   private async _processData(
-    dataRows: any[],
-    mappingDict: { [key: string]: string },
+    dataRows: Record<string, any>[],
+    mappingDict: Record<string, string>,
     userId: string,
     confirm: boolean,
     filePath: string,
   ): Promise<Insight> {
-    const insights: Insight = {
-      totalSales: 0,
-      totalProfit: 0,
-      avgProfitMargin: 0,
-      rows: [],
-    };
-    let saleCount = 0;
-
+    const insights: Insight = { totalSales: 0, totalProfit: 0, avgProfitMargin: 0, rows: [] };
     const filenameMatch = filePath.match(/(\d{4}-\d{2}-\d{2})/);
     const defaultSaleDate = filenameMatch ? new Date(filenameMatch[1]) : null;
 
     for (const row of dataRows) {
-      const productName = row[mappingDict.product_name] || '';
+      // mappingDict keys like mappingDict['product_name'] => 'item name' (lowercase)
+      const productKey = mappingDict['product_name'];
+      const qtyKey = mappingDict['quantity_sold'] || mappingDict['quantity'] || mappingDict['qty'];
+      const priceKey = mappingDict['sale_price'] || mappingDict['amount'] || mappingDict['price'];
+      const dateKey = mappingDict['sale_date'] || mappingDict['date'];
+
+      // row keys are normalized to lowercase headers
+      const productName = productKey ? String(row[this.normalizeHeader(productKey)] || '').trim() : (row['item name'] || row['item'] || row['product'] || '');
       if (!productName) {
-        this.logger.warn(
-          `Skipping row due to empty productName. Row data: ${JSON.stringify(row)}`,
-        );
+        this.logger.warn(`Skipping row due to empty productName. Row data: ${JSON.stringify(row)}`);
         continue;
       }
 
-      const quantitySold = parseInt(row[mappingDict.quantity_sold] || '1');
-      const totalSalePrice = parseFloat(row[mappingDict.sale_price] || '0');
-      const unitPrice = quantitySold > 0 ? totalSalePrice / quantitySold : 0;
-      const saleDate = mappingDict.sale_date
-        ? new Date(row[mappingDict.sale_date])
-        : defaultSaleDate;
+      const qtyRaw = qtyKey ? row[this.normalizeHeader(qtyKey)] : (row['quantity'] || row['qty'] || '1');
+      const amountRaw = priceKey ? row[this.normalizeHeader(priceKey)] : (row['amount'] || row['price'] || '0');
 
-      if (isNaN(quantitySold) || isNaN(totalSalePrice)) {
-        this.logger.warn(
-          `Skipping row due to invalid quantity or price. Row data: ${JSON.stringify(row)}`,
-        );
+      const quantitySold = Number.isFinite(qtyRaw) ? Number(qtyRaw) : this.parseNumber(qtyRaw);
+      const amount = Number.isFinite(amountRaw) ? Number(amountRaw) : this.parseNumber(amountRaw);
+
+      if (!quantitySold || quantitySold <= 0) {
+        this.logger.warn(`Skipping row due to invalid quantity. Row data: ${JSON.stringify(row)}`);
         continue;
       }
 
-      const mappedRow = { productName, quantitySold, salePrice: totalSalePrice, unitPrice, saleDate };
+      // unit price = amount / quantity
+      const unitPrice = amount / quantitySold;
+      const saleDate = (dateKey && row[this.normalizeHeader(dateKey)]) ? new Date(row[this.normalizeHeader(dateKey)]) : defaultSaleDate;
 
-      let product = await this.productRepository.findOne({
-        where: { name: productName.toLowerCase() }, // Case-insensitive lookup
-      });
-      if (!product) {
-        // Use TypeORM's upsert to prevent duplicates with unique constraint
-        await this.productRepository.upsert(
-          {
-            name: productName.toLowerCase(),
-            total_cost: 0,
-            category: 'uncategorized',
-            sell_price: unitPrice,
-            status: 'new',
-            quantity_sold: quantitySold,
-          },
-          { conflictPaths: ['name'], skipUpdateIfNoValuesChanged: true }
-        );
-        product = await this.productRepository.findOneOrFail({ where: { name: productName.toLowerCase() } });
-      } else {
-        // Update existing product
-        const totalQuantity = (product.quantity_sold || 0) + quantitySold;
-        const newSellPrice = ((product.sell_price * (product.quantity_sold || 0)) + totalSalePrice) / totalQuantity;
-        product.sell_price = newSellPrice;
-        product.quantity_sold = totalQuantity;
-        await this.productRepository.save(product);
+      // Find product case-insensitively
+      let productRecord: Product | null = await this.productRepository.createQueryBuilder('p')
+        .where('LOWER(p.name) = LOWER(:name)', { name: productName })
+        .getOne();
+
+      if (!productRecord) {
+        productRecord = this.productRepository.create({
+          name: productName,
+          total_cost: 0,
+          category: 'uncategorized',
+          status: 'new',
+        }) as Product;
+        await this.productRepository.save(productRecord);
+      }
+      // Ensure productRecord is not null for subsequent operations
+      if (!productRecord) {
+        throw new Error('Product record should not be null at this point.');
       }
 
+      // Profit = amount (CSV total) - product.total_cost * quantity
+      const productTotalCost = this.parseNumber((productRecord as any).total_cost);
+      const profit = amount - (productTotalCost * quantitySold);
+      const profitMargin = amount > 0 ? (profit / amount) * 100 : 0;
+
+      // If confirm true, save Sale row
       if (confirm) {
         const sale = this.saleRepository.create({
           user: { id: userId },
-          product: { id: product.id },
+          product: { id: productRecord.id },
+          product_name: productRecord.name,
           quantity: quantitySold,
-          total_amount: totalSalePrice,
+          total_amount: amount,
           sale_date: saleDate,
-        });
+        } as any);
         await this.saleRepository.save(sale);
       }
 
-      const profit = (unitPrice - (product.total_cost || 0)) * quantitySold;
-      const rowTotalSales = unitPrice * quantitySold;
-      insights.totalSales += rowTotalSales;
+      insights.totalSales += amount;
       insights.totalProfit += profit;
-      saleCount += quantitySold;
-
-      insights.rows.push({ ...mappedRow, profit });
+      insights.rows.push({
+        productName: productRecord.name,
+        quantitySold,
+        amount,
+        unitPrice,
+        saleDate,
+        profit,
+        profitMargin,
+      });
     }
 
-    insights.avgProfitMargin =
-      saleCount > 0
-        ? (insights.totalProfit / insights.totalSales) * 100
-        : 0;
-
+    insights.avgProfitMargin = insights.totalSales > 0 ? (insights.totalProfit / insights.totalSales) * 100 : 0;
     return insights;
   }
 
+  // -------------------------
+  // Core processing for daily files (prefers filename date)
+  // -------------------------
   private async _processDailyData(
-    dataRows: any[],
-    mappingDict: { [key: string]: string },
+    dataRows: Record<string, any>[],
+    mappingDict: Record<string, string>,
     userId: string,
     confirm: boolean,
     filePath: string,
   ): Promise<Insight> {
-    const insights: Insight = {
-      totalSales: 0,
-      totalProfit: 0,
-      avgProfitMargin: 0,
-      rows: [],
-    };
-    let saleCount = 0;
-
+    // This reuses the same logic but forces saleDate = filename date (if present),
+    // which is typical for reports named like items-report-YYYY-MM-DD_YYYY-MM-DD.csv
     const filenameMatch = filePath.match(/(\d{4}-\d{2}-\d{2})/);
     const defaultSaleDate = filenameMatch ? new Date(filenameMatch[1]) : null;
 
+    // Call the generic processor but override date usage:
+    // We'll copy/paste similar logic but set saleDate = defaultSaleDate always (unless mapping gives explicit date).
+    const insights: Insight = { totalSales: 0, totalProfit: 0, avgProfitMargin: 0, rows: [] };
+
     for (const row of dataRows) {
-      const productName = row[mappingDict.product_name] || '';
+      const productKey = mappingDict['product_name'];
+      const qtyKey = mappingDict['quantity_sold'] || mappingDict['quantity'] || mappingDict['qty'];
+      const priceKey = mappingDict['sale_price'] || mappingDict['amount'] || mappingDict['price'];
+      const dateKey = mappingDict['sale_date'] || mappingDict['date'];
+
+      const productName = productKey ? String(row[this.normalizeHeader(productKey)] || '').trim() : (row['item name'] || row['item'] || row['product'] || '');
       if (!productName) {
-        this.logger.warn(
-          `Skipping row due to empty productName. Row data: ${JSON.stringify(row)}`,
-        );
+        this.logger.warn(`Skipping row due to empty productName. Row data: ${JSON.stringify(row)}`);
         continue;
       }
 
-      const quantitySold = parseInt(row[mappingDict.quantity_sold] || '1');
-      const totalSalePrice = parseFloat(row[mappingDict.sale_price] || '0');
-      const unitPrice = quantitySold > 0 ? totalSalePrice / quantitySold : 0;
-      const saleDate = defaultSaleDate; // Use filename date for daily sales
+      const qtyRaw = qtyKey ? row[this.normalizeHeader(qtyKey)] : (row['quantity'] || row['qty'] || '1');
+      const amountRaw = priceKey ? row[this.normalizeHeader(priceKey)] : (row['amount'] || row['price'] || '0');
 
-      if (isNaN(quantitySold) || isNaN(totalSalePrice)) {
-        this.logger.warn(
-          `Skipping row due to invalid quantity or price. Row data: ${JSON.stringify(row)}`,
-        );
+      const quantitySold = Number.isFinite(qtyRaw) ? Number(qtyRaw) : this.parseNumber(qtyRaw);
+      const amount = Number.isFinite(amountRaw) ? Number(amountRaw) : this.parseNumber(amountRaw);
+
+      if (!quantitySold || quantitySold <= 0) {
+        this.logger.warn(`Skipping row due to invalid quantity. Row data: ${JSON.stringify(row)}`);
         continue;
       }
 
-      const mappedRow = { productName, quantitySold, salePrice: totalSalePrice, unitPrice, saleDate };
+      const unitPrice = amount / quantitySold;
+      // prefer filename date, but if user mapping provides explicit date value, use that
+      const mappedDateVal = (dateKey && row[this.normalizeHeader(dateKey)]) ? new Date(row[this.normalizeHeader(dateKey)]) : null;
+      const saleDate = mappedDateVal || defaultSaleDate;
 
-      let product = await this.productRepository.findOne({
-        where: { name: productName.toLowerCase() }, // Case-insensitive lookup
-      });
-      if (!product) {
-        // Use upsert to prevent duplicates
-        await this.productRepository.upsert(
-          {
-            name: productName.toLowerCase(),
-            total_cost: 0,
-            category: 'uncategorized',
-            sell_price: unitPrice,
-            status: 'new',
-            quantity_sold: quantitySold,
-          },
-          { conflictPaths: ['name'], skipUpdateIfNoValuesChanged: true }
-        );
-        product = await this.productRepository.findOneOrFail({ where: { name: productName.toLowerCase() } });
-      } else {
-        const totalQuantity = (product.quantity_sold || 0) + quantitySold;
-        const newSellPrice = ((product.sell_price * (product.quantity_sold || 0)) + totalSalePrice) / totalQuantity;
-        product.sell_price = newSellPrice;
-        product.quantity_sold = totalQuantity;
-        await this.productRepository.save(product);
+      let productRecord: Product | null = await this.productRepository.createQueryBuilder('p')
+        .where('LOWER(p.name) = LOWER(:name)', { name: productName })
+        .getOne();
+
+      if (!productRecord) {
+        productRecord = this.productRepository.create({
+          name: productName,
+          total_cost: 0,
+          category: 'uncategorized',
+          status: 'new',
+        }) as Product;
+        await this.productRepository.save(productRecord);
       }
+      // Ensure productRecord is not null for subsequent operations
+      if (!productRecord) {
+        throw new Error('Product record should not be null at this point.');
+      }
+
+      const productTotalCost = this.parseNumber((productRecord as any).total_cost);
+      const profit = amount - (productTotalCost * quantitySold);
+      const profitMargin = amount > 0 ? (profit / amount) * 100 : 0;
 
       if (confirm) {
         const sale = this.saleRepository.create({
           user: { id: userId },
-          product: { id: product.id },
+          product: { id: productRecord.id },
+          product_name: productRecord.name,
           quantity: quantitySold,
-          total_amount: totalSalePrice,
+          total_amount: amount,
           sale_date: saleDate,
-        });
+        } as any);
         await this.saleRepository.save(sale);
       }
 
-      const profit = (unitPrice - (product.total_cost || 0)) * quantitySold;
-      const rowTotalSales = unitPrice * quantitySold;
-      insights.totalSales += rowTotalSales;
+      insights.totalSales += amount;
       insights.totalProfit += profit;
-      saleCount += quantitySold;
-
-      insights.rows.push({ ...mappedRow, profit });
+      insights.rows.push({
+        productName: productRecord.name,
+        quantitySold,
+        amount,
+        unitPrice,
+        saleDate,
+        profit,
+        profitMargin,
+      });
     }
 
-    insights.avgProfitMargin =
-      saleCount > 0
-        ? (insights.totalProfit / insights.totalSales) * 100
-        : 0;
-
+    insights.avgProfitMargin = insights.totalSales > 0 ? (insights.totalProfit / insights.totalSales) * 100 : 0;
     return insights;
   }
 }
+// Note: This service assumes that the CSV/XLSX files have been pre-validated and contain the necessary columns.
+// It does not handle file uploads directly; that should be managed by the controller.
+// The service focuses on processing the data, saving mappings, and importing sales based on user-defined mappings.
+// The methods are designed to be reusable and modular, allowing for easy testing and maintenance.
+// The service also includes detailed logging for debugging purposes, especially when skipping rows due to missing or invalid data.
+// The use of TypeORM repositories allows for efficient database interactions, leveraging the power of query builders for complex queries.
+// The service is structured to handle both generic CSV imports and daily sales reports, providing flexibility for different use cases.
+// The methods are designed to be reusable and modular, allowing for easy testing and maintenance.
+// The service also includes detailed logging for debugging purposes, especially when skipping rows due to missing or invalid data.
+// The use of TypeORM repositories allows for efficient database interactions, leveraging the power of query builders for complex queries.    
