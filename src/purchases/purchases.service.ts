@@ -25,7 +25,7 @@ export class PurchasesService {
     const { ingredientId, quantity, unit, purchasePrice } = createPurchaseDto;
     if (quantity <= 0 || purchasePrice < 0) throw new BadRequestException('Invalid quantity or price');
 
-    const ingredient = await this.ingredientsService.findOne(ingredientId);
+    const ingredient = await this.ingredientsService.findOne(ingredientId, userId);
     if (!ingredient) throw new NotFoundException(`Ingredient ${ingredientId} not found`);
 
     // Convert quantity to ingredient's base unit for consistency
@@ -47,7 +47,7 @@ export class PurchasesService {
     const savedPurchase = await this.purchaseRepository.save(purchase);
 
     // Create or update stock
-    const existingStocks = await this.stockService.findAllByIngredientId(ingredientId);
+    const existingStocks = await this.stockService.findAllByIngredientId(ingredientId, userId);
     let stockToUpdate: Stock | undefined;
     for (const stock of existingStocks) {
       if (this.stockService.isCompatibleUnit(unit, stock.unit) && stock.remaining_quantity > 0) {
@@ -76,7 +76,7 @@ export class PurchasesService {
         total_purchased_price: newTotalPurchasedPrice,
         waste_percent: wastePercent,
         updated_at: new Date(),
-      });
+      }, userId);
     } else {
       await this.stockService.create({
         ingredient,
@@ -104,5 +104,12 @@ export class PurchasesService {
 
   async findAll(): Promise<Purchase[]> {
     return this.purchaseRepository.find({ relations: ['ingredient'] });
+  }
+
+  async findAllByUser(userId: string): Promise<Purchase[]> {
+    return this.purchaseRepository.find({
+      where: { user: { id: userId } },
+      relations: ['ingredient'],
+    });
   }
 }

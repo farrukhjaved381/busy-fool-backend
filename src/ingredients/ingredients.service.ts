@@ -8,6 +8,7 @@ import * as csv from 'csv-parse';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Stock } from '../stock/entities/stock.entity';
+import { UsersService } from '../users/users.service'; // Import UsersService
 
 /**
  * Service to manage ingredient-related operations including creation, updates, and CSV import.
@@ -34,6 +35,7 @@ export class IngredientsService {
     private readonly ingredientRepository: Repository<Ingredient>,
     @InjectRepository(Stock)
     private readonly stockRepository: Repository<Stock>,
+    private readonly usersService: UsersService, // Inject UsersService
   ) {}
 
   /**
@@ -42,7 +44,10 @@ export class IngredientsService {
    * @returns The created ingredient
    * @throws BadRequestException if quantity is invalid or waste percent is out of range
    */
-  async create(createIngredientDto: CreateIngredientDto): Promise<Ingredient> {
+  async create(createIngredientDto: CreateIngredientDto, userId: string): Promise<Ingredient> {
+    const user = await this.usersService.findById(userId);
+    if (!user) throw new BadRequestException('User not found');
+
     if (!createIngredientDto.quantity || createIngredientDto.quantity <= 0) {
       throw new BadRequestException('Quantity must be a positive number');
     }
@@ -50,7 +55,7 @@ export class IngredientsService {
       throw new BadRequestException('Waste percentage must be between 0 and 100');
     }
 
-    const ingredient = this.ingredientRepository.create(createIngredientDto);
+    const ingredient = this.ingredientRepository.create({ ...createIngredientDto, user }); // Associate with user
     const savedIngredient = await this.ingredientRepository.save(ingredient);
 
     const usablePercentage = 1 - (createIngredientDto.waste_percent / 100);
@@ -81,7 +86,10 @@ export class IngredientsService {
     return this.ingredientRepository.save(savedIngredient);
   }
 
-  async bulkCreate(createIngredientDtos: CreateIngredientDto[]): Promise<Ingredient[]> {
+  async bulkCreate(createIngredientDtos: CreateIngredientDto[], userId: string): Promise<Ingredient[]> {
+    const user = await this.usersService.findById(userId);
+    if (!user) throw new BadRequestException('User not found');
+
     if (!createIngredientDtos.length) {
       throw new BadRequestException('No ingredients provided');
     }
@@ -94,7 +102,7 @@ export class IngredientsService {
         throw new BadRequestException('Waste percentage must be between 0 and 100');
       }
 
-      const ingredient = this.ingredientRepository.create(dto);
+      const ingredient = this.ingredientRepository.create({ ...dto, user }); // Associate with user
       const savedIngredient = await this.ingredientRepository.save(ingredient);
 
       const usablePercentage = 1 - (dto.waste_percent / 100);
@@ -133,7 +141,10 @@ export class IngredientsService {
    * @returns Import summary with created ingredients and errors
    * @throws BadRequestException if file is invalid or required fields are missing
    */
-  async importCsv(file: Express.Multer.File): Promise<any> {
+  async importCsv(file: Express.Multer.File, userId: string): Promise<any> {
+    const user = await this.usersService.findById(userId);
+    if (!user) throw new BadRequestException('User not found');
+
     if (!file || !file.path) {
       throw new BadRequestException('No file uploaded');
     }
@@ -177,7 +188,7 @@ export class IngredientsService {
           throw new Error('Waste percentage must be between 0 and 100');
         }
 
-        const ingredient = this.ingredientRepository.create(createDto);
+        const ingredient = this.ingredientRepository.create({ ...createDto, user }); // Associate with user
         const savedIngredient = await this.ingredientRepository.save(ingredient);
 
         const usablePercentage = 1 - (createDto.waste_percent / 100);
@@ -230,36 +241,50 @@ export class IngredientsService {
   }
 
   /**
-   * Retrieves all ingredients with their stock batches.
-   * @returns List of all ingredients
+   * Retrieves all ingredients with their stock batches for a specific user.
+   * @param userId The ID of the user
+   * @returns List of all ingredients for the user
    */
-  async findAll(): Promise<Ingredient[]> {
-    return this.ingredientRepository.find({ relations: ['stocks'] });
+  async findAll(userId: string): Promise<Ingredient[]> { // Modified to accept userId
+    return this.ingredientRepository.find({
+      where: { user: { id: userId } }, // Filter by user ID
+      relations: ['stocks'],
+    });
+  }
+
+  async findAllByUser(userId: string): Promise<Ingredient[]> {
+    return this.findAll(userId); // Re-use the modified findAll
   }
 
   /**
-   * Retrieves an ingredient by ID with its stock batches.
+   * Retrieves an ingredient by ID with its stock batches for a specific user.
    * @param id Ingredient ID
+   * @param userId The ID of the user
    * @returns The ingredient
-   * @throws NotFoundException if ingredient is not found
+   * @throws NotFoundException if ingredient is not found for this user
    */
-  async findOne(id: string): Promise<Ingredient> {
-    const ingredient = await this.ingredientRepository.findOne({ where: { id }, relations: ['stocks'] });
+  async findOne(id: string, userId: string): Promise<Ingredient> {
+    const ingredient = await this.ingredientRepository.findOne({ where: { id, user: { id: userId } }, relations: ['stocks'] });
     if (!ingredient) {
-      throw new NotFoundException(`Ingredient with ID ${id} not found`);
+      throw new NotFoundException(`Ingredient with ID ${id} not found for this user`);
     }
     return ingredient;
   }
 
   /**
-   * Updates an existing ingredient and its stock batches.
+   * Updates an existing ingredient and its stock batches for a specific user.
    * @param id Ingredient ID
    * @param updateIngredientDto Updated data
+   * @param userId The ID of the user
    * @returns The updated ingredient
    * @throws BadRequestException if waste percent is out of range or quantity is insufficient
+   * @throws NotFoundException if ingredient is not found for this user
    */
-  async update(id: string, updateIngredientDto: UpdateIngredientDto): Promise<Ingredient> {
-    const ingredient = await this.findOne(id);
+  async update(id: string, updateIngredientDto: UpdateIngredientDto, userId: string): Promise<Ingredient> {
+    const ingredient = await this.ingredientRepository.findOne({ where: { id, user: { id: userId } } });
+    if (!ingredient) {
+      throw new NotFoundException(`Ingredient with ID ${id} not found for this user`);
+    }
     if (updateIngredientDto.waste_percent && (updateIngredientDto.waste_percent < 0 || updateIngredientDto.waste_percent > 100)) {
       throw new BadRequestException('Waste percentage must be between 0 and 100');
     }
@@ -309,12 +334,16 @@ export class IngredientsService {
   }
 
   /**
-   * Deletes an ingredient and its stock batches.
+   * Deletes an ingredient and its stock batches for a specific user.
    * @param id Ingredient ID
-   * @throws NotFoundException if ingredient is not found
+   * @param userId The ID of the user
+   * @throws NotFoundException if ingredient is not found for this user
    */
-  async remove(id: string): Promise<void> {
-    const ingredient = await this.findOne(id);
+  async remove(id: string, userId: string): Promise<void> {
+    const ingredient = await this.ingredientRepository.findOne({ where: { id, user: { id: userId } } });
+    if (!ingredient) {
+      throw new NotFoundException(`Ingredient with ID ${id} not found for this user`);
+    }
     await this.stockRepository.delete({ ingredient: { id } });
     await this.ingredientRepository.remove(ingredient);
   }

@@ -13,18 +13,32 @@ export class StockService {
     private readonly ingredientsService: IngredientsService,
   ) {}
 
-  async findAll(): Promise<Stock[]> {
-    return this.stockRepository.find({ relations: ['ingredient'] });
+  async findAll(userId: string): Promise<Stock[]> {
+    return this.stockRepository.find({
+      where: { ingredient: { user: { id: userId } } },
+      relations: ['ingredient'],
+    });
   }
 
-  async findOne(id: string): Promise<Stock> {
-    const stock = await this.stockRepository.findOne({ where: { id }, relations: ['ingredient'] });
-    if (!stock) throw new NotFoundException(`Stock batch ${id} not found`);
+  async findAllByUser(userId: string): Promise<Stock[]> {
+    return this.findAll(userId);
+  }
+
+  async findOne(id: string, userId: string): Promise<Stock> {
+    const stock = await this.stockRepository.findOne({
+      where: { id, ingredient: { user: { id: userId } } },
+      relations: ['ingredient'],
+    });
+    if (!stock) throw new NotFoundException(`Stock batch ${id} not found for this user`);
     return stock;
   }
 
-  async findAllByIngredientId(ingredientId: string): Promise<Stock[]> {
-    return this.stockRepository.find({ where: { ingredient: { id: ingredientId } }, relations: ['ingredient'], order: { purchased_at: 'ASC' } });
+  async findAllByIngredientId(ingredientId: string, userId: string): Promise<Stock[]> {
+    return this.stockRepository.find({
+      where: { ingredient: { id: ingredientId, user: { id: userId } } },
+      relations: ['ingredient'],
+      order: { purchased_at: 'ASC' },
+    });
   }
 
   async convertQuantity(quantity: number, fromUnit: string, toUnit: string): Promise<number> {
@@ -45,8 +59,8 @@ export class StockService {
     throw new BadRequestException(`Incompatible units: ${fromUnit} and ${toUnit}`);
   }
 
-  async getAvailableStock(ingredientId: string): Promise<number> {
-    const stocks = await this.findAllByIngredientId(ingredientId);
+  async getAvailableStock(ingredientId: string, userId: string): Promise<number> {
+    const stocks = await this.findAllByIngredientId(ingredientId, userId);
     return stocks.reduce((sum, stock) => sum + (Number(stock.remaining_quantity) || 0), 0);
   }
 
@@ -58,13 +72,13 @@ export class StockService {
            (u1 === 'unit' && u2 === 'unit');
   }
 
-  async remove(id: string): Promise<void> {
-    const stock = await this.findOne(id);
+  async remove(id: string, userId: string): Promise<void> {
+    const stock = await this.findOne(id, userId);
     await this.stockRepository.remove(stock);
   }
 
-  async update(id: string, updateData: Partial<Stock>): Promise<Stock> {
-    const stock = await this.findOne(id);
+  async update(id: string, updateData: Partial<Stock>, userId: string): Promise<Stock> {
+    const stock = await this.findOne(id, userId);
     Object.assign(stock, updateData);
     return this.stockRepository.save(stock);
   }

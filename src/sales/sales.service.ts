@@ -14,8 +14,6 @@ import { Stock } from '../stock/entities/stock.entity'; // Import Stock entity
 import { Product } from '../products/entities/product.entity';
 import { ImportSalesUnmatched } from './entities/import-sales.entity';
 
-
-
 @Injectable()
 export class SalesService {
   constructor(
@@ -26,9 +24,7 @@ export class SalesService {
     @InjectRepository(Waste) private wasteRepository: Repository<Waste>,
     @InjectRepository(Stock) private stockRepository: Repository<Stock>,
     @InjectRepository(Product) private productRepository: Repository<Product>,
-@InjectRepository(Sale) private saleRepository: Repository<Sale>,
-@InjectRepository(ImportSalesUnmatched) private unmatchedRepository: Repository<ImportSalesUnmatched>,
- // Add Stock repository
+    @InjectRepository(ImportSalesUnmatched) private unmatchedRepository: Repository<ImportSalesUnmatched>,
     private productsService: ProductsService,
     private usersService: UsersService,
     private readonly stockService: StockService,
@@ -42,15 +38,19 @@ export class SalesService {
     if (!createSaleDto.productId) {
       throw new BadRequestException('Product ID is required for registered products');
     }
-    const product = await this.productsService.findOne(createSaleDto.productId);
-    if (!product) throw new NotFoundException(`Product ${createSaleDto.productId} not found`);
+    const product = await this.productsService.findOne(createSaleDto.productId, userId);
+    if (!product) throw new NotFoundException(`Product ${createSaleDto.productId} not found for this user`);
+
+    console.log(`Product fetched: ${product.name}, Product ID: ${product.id}`);
+    console.log(`Product.ingredients: Type = ${typeof product.ingredients}, Value = ${JSON.stringify(product.ingredients)}`);
+
 
     if (createSaleDto.quantity <= 0) {
       throw new BadRequestException('Quantity must be positive');
     }
 
     // Get max producible quantity
-    const { maxQuantity, stockUpdates } = await this.productsService.getMaxProducibleQuantity(createSaleDto.productId);
+    const { maxQuantity, stockUpdates } = await this.productsService.getMaxProducibleQuantity(createSaleDto.productId, userId);
     if (createSaleDto.quantity > maxQuantity) {
       // Calculate stock updates based on requested quantity for accurate remaining amounts
       const adjustedStockUpdates: { ingredientId: string; remainingQuantity: number; unit: string }[] = [];
@@ -79,18 +79,22 @@ export class SalesService {
 
     const sale = await this.entityManager.transaction(async transactionalEntityManager => {
       const totalIngredientQuantities: Record<string, { quantity: number; unit: string }> = {};
+
+      console.log(`Product ingredients array: Type = ${typeof product.ingredients}, Length = ${product.ingredients ? product.ingredients.length : 'N/A'}`);
+
       for (const pi of product.ingredients) {
         const ingredientId = pi.ingredient.id;
-        const piQuantity = typeof pi.quantity === 'string' ? parseFloat(pi.quantity) : pi.quantity;
-        if (isNaN(piQuantity)) throw new BadRequestException(`Invalid quantity for ingredient ${ingredientId}`);
-        const neededQuantity = piQuantity * createSaleDto.quantity;
+
+        if (typeof pi.quantity !== 'number' || isNaN(pi.quantity)) {
+          throw new BadRequestException(`Invalid quantity for ingredient ${ingredientId}.`);
+        }
+        const neededQuantity = pi.quantity * createSaleDto.quantity;
         totalIngredientQuantities[ingredientId] = totalIngredientQuantities[ingredientId] || { quantity: 0, unit: pi.unit };
         totalIngredientQuantities[ingredientId].quantity += neededQuantity;
-        console.log(`Ingredient ${ingredientId}: Needed ${neededQuantity} ${pi.unit}`);
       }
 
       for (const [ingredientId, { quantity: neededQuantity, unit: requestedUnit }] of Object.entries(totalIngredientQuantities)) {
-        const totalAvailable = await this.stockService.getAvailableStock(ingredientId);
+        const totalAvailable = await this.stockService.getAvailableStock(ingredientId, userId);
         const neededInLiters = await this.productsService.convertQuantity(neededQuantity, requestedUnit, 'L'); // Use productsService
         if (totalAvailable < neededInLiters) {
           throw new BadRequestException(
@@ -99,11 +103,23 @@ export class SalesService {
         }
 
         let remainingToDeduct = neededQuantity;
-        const stocks = await this.stockService.findAllByIngredientId(ingredientId);
+        const stocks = await this.stockService.findAllByIngredientId(ingredientId, userId);
         for (const stock of stocks) {
           if (remainingToDeduct <= 0) break;
           const stockRemainingInRequestedUnit = await this.productsService.convertQuantity(stock.remaining_quantity, stock.unit, requestedUnit); // Use productsService
+
+          // ADD THESE LOGS HERE:
+          console.log(`Debugging deduction for ingredient ${ingredientId}:`);
+          console.log(`  remainingToDeduct: ${remainingToDeduct}`);
+          console.log(`  stockRemainingInRequestedUnit: ${stockRemainingInRequestedUnit}`);
+
           const deductAmountInRequestedUnit = Math.min(remainingToDeduct, stockRemainingInRequestedUnit);
+
+          console.log(`  deductAmountInRequestedUnit: ${deductAmountInRequestedUnit}`);
+          console.log(`  isNaN(deductAmountInRequestedUnit): ${isNaN(deductAmountInRequestedUnit)}`);
+          console.log(`  productsService.isCompatibleUnit(requestedUnit, stock.unit): ${this.productsService.isCompatibleUnit(requestedUnit, stock.unit)}`);
+
+
           if (isNaN(deductAmountInRequestedUnit) || !this.productsService.isCompatibleUnit(requestedUnit, stock.unit)) {
             throw new BadRequestException(`Invalid deduction amount or incompatible units for stock ${stock.id}`);
           }
@@ -136,21 +152,28 @@ export class SalesService {
     return savedSale;
   }
 
-  async findAll(): Promise<Sale[]> {
-    return this.salesRepository.find({ relations: ['product', 'user'] });
+  async findAll(userId: string): Promise<Sale[]> {
+    return this.salesRepository.find({
+      where: { user: { id: userId } },
+      relations: ['product', 'user'],
+    });
   }
 
-  async remove(id: string): Promise<void> {
-    const sale = await this.salesRepository.findOneBy({ id });
+  async findAllByUser(userId: string): Promise<Sale[]> {
+    return this.findAll(userId);
+  }
+
+  async remove(id: string, userId: string): Promise<void> {
+    const sale = await this.salesRepository.findOne({ where: { id, user: { id: userId } } });
     if (!sale) {
-      throw new NotFoundException(`Sale with ID ${id} not found`);
+      throw new NotFoundException(`Sale with ID ${id} not found for this user`);
     }
     await this.salesRepository.remove(sale);
   }
 
-  async getDashboard(startDate: Date, endDate: Date) {
+  async getDashboard(startDate: Date, endDate: Date, userId: string) {
     const sales = await this.salesRepository.find({
-      where: { sale_date: Between(startDate, endDate) },
+      where: { sale_date: Between(startDate, endDate), user: { id: userId } },
       relations: ['product', 'product.ingredients', 'product.ingredients.ingredient'],
     });
 
@@ -212,19 +235,19 @@ export class SalesService {
     };
   }
 
-  async getMonthlyRealityCheck(startDate: Date, endDate: Date) {
+  async getMonthlyRealityCheck(startDate: Date, endDate: Date, userId: string) {
     const sales = await this.salesRepository.find({
-      where: { sale_date: Between(startDate, endDate) },
+      where: { sale_date: Between(startDate, endDate), user: { id: userId } },
       relations: ['product', 'product.ingredients', 'product.ingredients.ingredient'],
     });
 
     const purchases = await this.purchasesRepository.find({
-      where: { purchase_date: Between(startDate, endDate) },
+      where: { purchase_date: Between(startDate, endDate), user: { id: userId } },
       relations: ['ingredient'],
     });
 
     const wastes = await this.wasteRepository.find({
-      where: { wasteDate: Between(startDate, endDate) },
+      where: { wasteDate: Between(startDate, endDate), stock: { ingredient: { user: { id: userId } } } },
       relations: ['stock', 'stock.ingredient'],
     });
 
@@ -313,5 +336,4 @@ export class SalesService {
       ],
     };
   }
- 
 }

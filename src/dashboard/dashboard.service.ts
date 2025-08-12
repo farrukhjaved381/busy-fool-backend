@@ -4,11 +4,6 @@ import { ProductsService } from '../products/products.service';
 import { IngredientsService } from '../ingredients/ingredients.service';
 import { StockService } from '../stock/stock.service';
 import { SalesService } from '../sales/sales.service';
-import { Purchase } from '../purchases/entities/purchase.entity';
-import { Product } from '../products/entities/product.entity';
-import { Ingredient } from '../ingredients/entities/ingredient.entity';
-import { Stock } from '../stock/entities/stock.entity';
-import { Sale } from '../sales/entities/sale.entity';
 
 @Injectable()
 export class DashboardService {
@@ -20,45 +15,43 @@ export class DashboardService {
     private readonly salesService: SalesService,
   ) {}
 
-  async getDashboardData() {
-    const purchases: Purchase[] = await this.purchasesService.findAll();
-    const products: Product[] = await this.productsService.findAll();
-    const ingredients: Ingredient[] = await this.ingredientsService.findAll();
-    const stocks: Stock[] = await this.stockService.findAll();
-    const sales: Sale[] = await this.salesService.findAll();
+  async getDashboardData(userId: string) {
+    const purchases = await this.purchasesService.findAllByUser(userId);
+    const products = await this.productsService.findAllByUser(userId);
+    const ingredients = await this.ingredientsService.findAllByUser(userId);
+    const stocks = await this.stockService.findAllByUser(userId);
+    const sales = await this.salesService.findAllByUser(userId);
 
-    // Sales
     const totalSales = sales.reduce((sum, s) => sum + Number(s.total_amount), 0);
     const salesCount = sales.length;
-
-    // Purchases
     const totalPurchasesCost = stocks.reduce((sum, s) => sum + Number(s.total_purchased_price), 0);
-    const purchaseCount = purchases.length; // Adjust if stock reflects all purchases
-
-    // Profits
+    const purchaseCount = purchases.length;
     const totalProductCost = products.reduce((sum, p) => sum + Number(p.total_cost), 0);
     const totalProfit = totalSales - totalProductCost;
-
-    // Margins
     const totalMargin = products.reduce((sum, p) => sum + Number(p.margin_amount || 0), 0);
-    const avgMarginPercent = products.length ? (totalMargin / products.reduce((sum, p) => sum + Number(p.sell_price || 0), 0) * 100) : 0;
-
-    // Analytics
+    const avgMarginPercent = products.length
+      ? (totalMargin / products.reduce((sum, p) => sum + Number(p.sell_price || 0), 0) * 100)
+      : 0;
     const avgPurchasePrice = purchaseCount ? totalPurchasesCost / purchaseCount : 0;
     const totalStock = stocks.reduce((sum, s) => sum + Number(s.remaining_quantity || 0), 0);
     const lowStockIngredients = ingredients.filter(i => {
       const stock = stocks.find(s => s.ingredient && s.ingredient.id === i.id);
-      return stock && Number(stock.remaining_quantity) < 0.5; // Adjusted threshold
+      return stock && Number(stock.remaining_quantity) < 0.5;
     });
+    const latestPurchases = purchases
+      .sort((a, b) => new Date(b.purchase_date).getTime() - new Date(a.purchase_date).getTime())
+      .slice(0, 5);
 
-    // Latest Purchases
-    const latestPurchases = purchases.sort((a, b) => new Date(b.purchase_date).getTime() - new Date(a.purchase_date).getTime()).slice(0, 5);
-
-    // Suggestions
     const suggestions = {
-      stockManagement: lowStockIngredients.length ? `Restock ${lowStockIngredients.map(i => i.name).join(', ')}` : 'All stocks are sufficient.',
-      priceOptimization: avgPurchasePrice > 100 ? 'Review high purchase prices for cost savings.' : 'Purchase prices are optimized.',
-      salesBoost: salesCount < 5 ? 'Consider promoting low-selling products.' : 'Sales performance is strong.',
+      stockManagement: lowStockIngredients.length
+        ? `Restock ${lowStockIngredients.map(i => i.name).join(', ')}`
+        : 'All stocks are sufficient.',
+      priceOptimization: avgPurchasePrice > 100
+        ? 'Review high purchase prices for cost savings.'
+        : 'Purchase prices are optimized.',
+      salesBoost: salesCount < 5
+        ? 'Consider promoting low-selling products.'
+        : 'Sales performance is strong.',
     };
 
     return {

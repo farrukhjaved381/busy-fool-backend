@@ -7,12 +7,14 @@ import { ProductIngredient } from './entities/product-ingredient.entity';
 import { IngredientsModule } from '../ingredients/ingredients.module';
 import { StockModule } from '../stock/stock.module';
 import { Stock } from '../stock/entities/stock.entity';
+import { UsersModule } from '../users/users.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Product, ProductIngredient, Stock]),
     IngredientsModule,
     StockModule,
+    UsersModule,
   ],
   controllers: [ProductsController],
   providers: [ProductsService],

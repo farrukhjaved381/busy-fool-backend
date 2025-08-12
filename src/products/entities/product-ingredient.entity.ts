@@ -4,6 +4,11 @@ import { Ingredient } from '../../ingredients/entities/ingredient.entity';
 import { ApiProperty } from '@nestjs/swagger';
 import { Exclude, Expose } from 'class-transformer';
 
+const numberTransformer = {
+  from: (value: string) => parseFloat(value),
+  to: (value: number) => value.toFixed(2),
+};
+
 @Entity()
 export class ProductIngredient {
   @PrimaryGeneratedColumn('uuid')
@@ -21,7 +26,7 @@ export class ProductIngredient {
   @ApiProperty({ description: 'Associated ingredient', type: () => Ingredient })
   ingredient: Ingredient;
 
-  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: false })
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: false, transformer: numberTransformer })
   @ApiProperty({ description: 'Quantity used', example: 50, minimum: 0.01 })
   quantity: number;
 

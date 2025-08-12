@@ -5,8 +5,8 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { UserRole } from '../users/user.entity';
+import { Request as ExpressRequest } from 'express';
 
-@ApiTags('stock')
 @ApiTags('stock')
 @Controller('stock')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -18,8 +18,8 @@ export class StockController {
   @Roles(UserRole.OWNER)
   @ApiOperation({ summary: 'Get all stock batches' })
   @ApiResponse({ status: 200, description: 'List of stock batches retrieved.' })
-  async findAll() {
-    return this.stockService.findAll();
+  async findAll(@Request() req: ExpressRequest) {
+    return this.stockService.findAll((req as any).user.sub);
   }
 
   @Get(':id')
@@ -27,8 +27,8 @@ export class StockController {
   @ApiOperation({ summary: 'Get a stock batch by ID' })
   @ApiResponse({ status: 200, description: 'Stock batch retrieved.' })
   @ApiResponse({ status: 404, description: 'Stock batch not found.' })
-  async findOne(@Param('id') id: string) {
-    return this.stockService.findOne(id);
+  async findOne(@Param('id') id: string, @Request() req: ExpressRequest) {
+    return this.stockService.findOne(id, (req as any).user.sub);
   }
 
   @Delete(':id')
@@ -36,8 +36,8 @@ export class StockController {
   @ApiOperation({ summary: 'Delete a stock batch by ID' })
   @ApiResponse({ status: 200, description: 'Stock batch deleted.' })
   @ApiResponse({ status: 404, description: 'Stock batch not found.' })
-  async remove(@Param('id') id: string) {
-    return this.stockService.remove(id);
+  async remove(@Param('id') id: string, @Request() req: ExpressRequest) {
+    return this.stockService.remove(id, (req as any).user.sub);
   }
 
   @Get('ingredient/:ingredientId')
@@ -45,7 +45,7 @@ export class StockController {
   @ApiOperation({ summary: 'Get all stock batches by ingredient ID' })
   @ApiResponse({ status: 200, description: 'List of stock batches for the ingredient retrieved.' })
   @ApiResponse({ status: 404, description: 'No stock batches found for the ingredient.' })
-  async findAllByIngredientId(@Param('ingredientId') ingredientId: string) {
-    return this.stockService.findAllByIngredientId(ingredientId);
+  async findAllByIngredientId(@Param('ingredientId') ingredientId: string, @Request() req: ExpressRequest) {
+    return this.stockService.findAllByIngredientId(ingredientId, (req as any).user.sub);
   }
 }

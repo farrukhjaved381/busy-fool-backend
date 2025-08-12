@@ -1,14 +1,18 @@
-import { Entity, PrimaryGeneratedColumn, Column, OneToMany, CreateDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, OneToMany, CreateDateColumn, ManyToOne } from 'typeorm';
 import { ProductIngredient } from './product-ingredient.entity';
 import { Sale } from '../../sales/entities/sale.entity';
 import { ApiProperty } from '@nestjs/swagger';
 import { Expose } from 'class-transformer';
+import { User } from '../../users/user.entity'; // Import User entity
 
 @Entity()
 export class Product {
   @PrimaryGeneratedColumn('uuid')
   @ApiProperty({ description: 'Unique identifier for the product' })
   id: string;
+
+  @ManyToOne(() => User)
+  user: User; // Add user relationship
 
   @Column({ length: 100, nullable: false, unique: true })
   @ApiProperty({ description: 'Name of the product', example: 'Coffee Latte' })

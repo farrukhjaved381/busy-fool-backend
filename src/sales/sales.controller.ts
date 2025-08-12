@@ -62,16 +62,16 @@ export class SalesController {
   @Roles(UserRole.OWNER)
   @ApiOperation({ summary: 'Get all sales' })
   @ApiResponse({ status: HttpStatus.OK, description: 'List of sales', type: [Sale] })
-  async findAll() {
-    return this.salesService.findAll();
+  async findAll(@Request() req: any) {
+    return this.salesService.findAll(req.user.sub);
   }
 
   // ------------------ Delete Sale ------------------
   @Delete(':id')
   @Roles(UserRole.OWNER)
   @ApiOperation({ summary: 'Delete a sale by ID' })
-  async remove(@Param('id') id: string) {
-    return this.salesService.remove(id);
+  async remove(@Param('id') id: string, @Request() req: any) {
+    return this.salesService.remove(id, req.user.sub);
   }
 
   // ------------------ Dashboard ------------------
@@ -80,8 +80,8 @@ export class SalesController {
   @ApiOperation({ summary: 'Get reality check dashboard data' })
   @ApiQuery({ name: 'startDate', required: true })
   @ApiQuery({ name: 'endDate', required: true })
-  async getDashboard(@Query('startDate') startDate: string, @Query('endDate') endDate: string) {
-    return this.salesService.getDashboard(new Date(startDate), new Date(endDate));
+  async getDashboard(@Query('startDate') startDate: string, @Query('endDate') endDate: string, @Request() req: any) {
+    return this.salesService.getDashboard(new Date(startDate), new Date(endDate), req.user.sub);
   }
 
   // ------------------ Monthly Reality Check ------------------
@@ -90,8 +90,8 @@ export class SalesController {
   @ApiOperation({ summary: 'Get monthly reality check report' })
   @ApiQuery({ name: 'startDate', required: true })
   @ApiQuery({ name: 'endDate', required: true })
-  async getMonthlyRealityCheck(@Query('startDate') startDate: string, @Query('endDate') endDate: string) {
-    return this.salesService.getMonthlyRealityCheck(new Date(startDate), new Date(endDate));
+  async getMonthlyRealityCheck(@Query('startDate') startDate: string, @Query('endDate') endDate: string, @Request() req: any) {
+    return this.salesService.getMonthlyRealityCheck(new Date(startDate), new Date(endDate), req.user.sub);
   }
 
   

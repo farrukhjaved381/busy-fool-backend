@@ -262,6 +262,8 @@ export class CsvMappingsService {
           total_cost: 0,
           category: 'uncategorized',
           status: 'new',
+          user: { id: userId }, // Associate with the current user
+          sell_price: 0, // Default sell price to 0
         }) as Product;
         await this.productRepository.save(productRecord);
       }
@@ -362,6 +364,8 @@ export class CsvMappingsService {
           total_cost: 0,
           category: 'uncategorized',
           status: 'new',
+          user: { id: userId }, // Associate with the current user
+          sell_price: 0, // Default sell price to 0
         }) as Product;
         await this.productRepository.save(productRecord);
       }

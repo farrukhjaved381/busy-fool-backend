@@ -13,6 +13,7 @@ import { Ingredient } from '../ingredients/entities/ingredient.entity';
 import { WhatIfDto } from './dto/what-if.dto';
 import { MilkSwapDto } from './dto/milk-swap.dto';
 import { QuickActionDto } from './dto/quick-action.dto';
+import { UsersService } from '../users/users.service'; // Import UsersService
 
 @Injectable()
 export class ProductsService {
@@ -23,9 +24,13 @@ export class ProductsService {
     private readonly ingredientsService: IngredientsService,
     @Inject(forwardRef(() => StockService)) private readonly stockService: StockService,
     private readonly entityManager: EntityManager,
+    private readonly usersService: UsersService, // Inject UsersService
   ) {}
 
-  async create(createProductDto: CreateProductDto): Promise<Product> {
+  async create(createProductDto: CreateProductDto, userId: string): Promise<Product> {
+    const user = await this.usersService.findById(userId);
+    if (!user) throw new BadRequestException('User not found');
+
     if (!createProductDto.name || !createProductDto.category || createProductDto.sell_price <= 0) {
       throw new BadRequestException('Name, category, and positive sell price are required');
     }
@@ -37,14 +42,14 @@ export class ProductsService {
       if (!ingredientDto.ingredientId || ingredientDto.quantity <= 0 || !ingredientDto.unit) {
         throw new BadRequestException('Each ingredient must have a valid ID, positive quantity, and unit');
       }
-      const ingredient = await this.ingredientsService.findOne(ingredientDto.ingredientId);
+      const ingredient = await this.ingredientsService.findOne(ingredientDto.ingredientId, userId);
       if (!ingredient) throw new BadRequestException(`Ingredient ${ingredientDto.ingredientId} not found`);
 
       const trueCost = this.calculateTrueCost(ingredient, ingredientDto.unit);
       const lineCost = ingredientDto.quantity * trueCost;
       totalCost += lineCost;
 
-      const stock = await this.getAvailableStock(ingredient, ingredientDto.unit, ingredientDto.quantity);
+      const stock = await this.getAvailableStock(ingredient, ingredientDto.unit, ingredientDto.quantity, userId);
       if (!stock || stock.remaining_quantity <= 0) {
         throw new BadRequestException(`No available stock for ingredient ${ingredientDto.ingredientId} and unit ${ingredientDto.unit}.`);
       }
@@ -76,6 +81,7 @@ export class ProductsService {
       margin_percent: this.calculateCappedMarginPercent(createProductDto.sell_price, totalCost),
       status: this.calculateStatus(createProductDto.sell_price - totalCost),
       ingredients: productIngredients,
+      user: user
     });
 
     const savedProduct = await this.productRepository.save(product);
@@ -89,12 +95,12 @@ export class ProductsService {
     return classToPlain(savedProduct) as Product;
   }
 
-  async createOrUpdateStock(ingredientId: string, createStockDto: { purchased_quantity: number; unit: string; purchase_price: number; waste_percent: number }): Promise<Stock> {
+  async createOrUpdateStock(ingredientId: string, createStockDto: { purchased_quantity: number; unit: string; purchase_price: number; waste_percent: number }, userId: string): Promise<Stock> {
     if (!ingredientId || createStockDto.purchased_quantity <= 0 || !createStockDto.unit || createStockDto.purchase_price < 0 || createStockDto.waste_percent < 0 || createStockDto.waste_percent > 100) {
       throw new BadRequestException('Invalid stock data');
     }
 
-    const ingredient = await this.ingredientsService.findOne(ingredientId);
+    const ingredient = await this.ingredientsService.findOne(ingredientId, userId);
     if (!ingredient) throw new BadRequestException(`Ingredient ${ingredientId} not found`);
 
     const existingStocks = await this.stockRepository.find({ where: { ingredient: { id: ingredientId }, remaining_quantity: MoreThan(0) } });
@@ -113,7 +119,7 @@ export class ProductsService {
         stockToUpdate.purchased_quantity = totalPurchased;
         await this.stockRepository.save(stockToUpdate);
 
-        await this.updateIngredientCost(ingredientId);
+        await this.updateIngredientCost(ingredientId, userId);
         return stockToUpdate;
       }
     }
@@ -133,11 +139,11 @@ export class ProductsService {
     });
     const savedStock = await this.stockRepository.save(newStock);
 
-    await this.updateIngredientCost(ingredientId);
+    await this.updateIngredientCost(ingredientId, userId);
     return savedStock;
   }
 
-  async updateIngredientCost(ingredientId: string): Promise<void> {
+  async updateIngredientCost(ingredientId: string, userId: string): Promise<void> {
     const stocks = await this.stockRepository.find({ where: { ingredient: { id: ingredientId } } });
     if (stocks.length === 0) return;
 
@@ -145,9 +151,9 @@ export class ProductsService {
     const totalQuantity = stocks.reduce((sum: number, stock: Stock) => sum + stock.purchased_quantity, 0);
     const newCostPerUnit = totalCost / totalQuantity;
 
-    const ingredient = await this.ingredientsService.findOne(ingredientId);
+    const ingredient = await this.ingredientsService.findOne(ingredientId, userId);
     ingredient.cost_per_unit = newCostPerUnit;
-    await this.ingredientsService.update(ingredientId, { cost_per_unit: newCostPerUnit });
+    await this.ingredientsService.update(ingredientId, { cost_per_unit: newCostPerUnit }, userId);
 
     const products = await this.productRepository.find({ relations: ['ingredients', 'ingredients.ingredient'] });
     for (const product of products) {
@@ -166,20 +172,30 @@ export class ProductsService {
     }
   }
 
-  async findAll(): Promise<Product[]> {
-    console.log('Fetching all products');
-    return this.productRepository.find({ relations: ['ingredients', 'ingredients.ingredient'] });
+  async findAll(userId: string): Promise<Product[]> { // Modified to accept userId
+    console.log('Fetching all products for user:', userId);
+    return this.productRepository.find({
+      where: { user: { id: userId } }, // Filter by user ID
+      relations: ['ingredients', 'ingredients.ingredient'],
+    });
   }
 
-  async findOne(id: string): Promise<Product> {
-    console.log('Finding product with ID:', id);
-    const product = await this.productRepository.findOne({ where: { id }, relations: ['ingredients', 'ingredients.ingredient'] });
-    if (!product) throw new NotFoundException(`Product with ID ${id} not found`);
+  async findAllByUser(userId: string): Promise<Product[]> {
+    return this.findAll(userId); // Re-use the modified findAll
+  }
+
+  async findOne(id: string, userId: string): Promise<Product> {
+    console.log('Finding product with ID:', id, 'for user:', userId);
+    const product = await this.productRepository.findOne({ where: { id, user: { id: userId } }, relations: ['ingredients', 'ingredients.ingredient'] });
+    if (!product) throw new NotFoundException(`Product with ID ${id} not found for this user`);
     return product;
   }
 
-  async update(id: string, updateProductDto: UpdateProductDto): Promise<Product> {
-    const product = await this.findOne(id);
+  async update(id: string, updateProductDto: UpdateProductDto, userId: string): Promise<Product> {
+    const product = await this.productRepository.findOne({ where: { id, user: { id: userId } } });
+    if (!product) {
+      throw new NotFoundException(`Product with ID ${id} not found for this user`);
+    }
 
     if (updateProductDto.name) product.name = updateProductDto.name;
     if (updateProductDto.category) product.category = updateProductDto.category;
@@ -201,11 +217,11 @@ export class ProductsService {
           if (!ingredientDto.ingredientId || ingredientDto.quantity <= 0 || !ingredientDto.unit) {
             throw new BadRequestException('Each ingredient must have a valid ID, positive quantity, and unit');
           }
-          const ingredient = await this.ingredientsService.findOne(ingredientDto.ingredientId);
+          const ingredient = await this.ingredientsService.findOne(ingredientDto.ingredientId, userId);
           if (!ingredient) throw new BadRequestException(`Ingredient ${ingredientDto.ingredientId} not found`);
 
           const stockDeduction = ingredientDto.quantity;
-          const stock = await this.getAvailableStock(ingredient, ingredientDto.unit, stockDeduction);
+          const stock = await this.getAvailableStock(ingredient, ingredientDto.unit, stockDeduction, userId);
           if (!stock) {
             throw new BadRequestException(`Insufficient stock for ingredient ${ingredientDto.ingredientId} after update.`);
           }
@@ -264,20 +280,23 @@ export class ProductsService {
     return classToPlain(refreshedProduct) as Product;
   }
 
-  async remove(id: string): Promise<void> {
-    const product = await this.findOne(id);
+  async remove(id: string, userId: string): Promise<void> {
+    const product = await this.productRepository.findOne({ where: { id, user: { id: userId } } });
+    if (!product) {
+      throw new NotFoundException(`Product with ID ${id} not found for this user`);
+    }
     await this.productIngredientRepository.delete({ product: { id } });
     await this.productRepository.delete(id);
   }
 
-  async whatIf(whatIfDto: WhatIfDto): Promise<{ productId: string; newMargin: number; newStatus: string }[]> {
+  async whatIf(whatIfDto: WhatIfDto, userId: string): Promise<{ productId: string; newMargin: number; newStatus: string }[]> {
     if (!whatIfDto.productIds?.length || whatIfDto.priceAdjustment === undefined) {
       throw new BadRequestException('Product IDs and price adjustment are required');
     }
 
     const results = [];
     for (const productId of whatIfDto.productIds) {
-      const product = await this.findOne(productId).catch(() => null);
+      const product = await this.findOne(productId, userId).catch(() => null); // Pass userId
       if (!product) continue;
 
       const sellPrice = Number(product.sell_price);
@@ -300,12 +319,12 @@ export class ProductsService {
     return results;
   }
 
-  async milkSwap(milkSwapDto: MilkSwapDto): Promise<{ originalMargin: number; newMargin: number; upchargeCovered: boolean }> {
+  async milkSwap(milkSwapDto: MilkSwapDto, userId: string): Promise<{ originalMargin: number; newMargin: number; upchargeCovered: boolean }> {
     if (!milkSwapDto.productId || !milkSwapDto.originalIngredientId || !milkSwapDto.newIngredientId) {
       throw new BadRequestException('Product ID, original ingredient ID, and new ingredient ID are required');
     }
 
-    const product = await this.findOne(milkSwapDto.productId);
+    const product = await this.findOne(milkSwapDto.productId, userId); // Pass userId
     const sellPrice = Number(product.sell_price);
     const originalTotalCost = Number(product.total_cost || 0);
     const originalMarginAmount = Number((sellPrice - originalTotalCost).toFixed(2));
@@ -315,7 +334,7 @@ export class ProductsService {
     for (const pi of product.ingredients) {
       let ingredient = pi.ingredient;
       if (pi.ingredient.id === milkSwapDto.originalIngredientId) {
-        ingredient = await this.ingredientsService.findOne(milkSwapDto.newIngredientId);
+        ingredient = await this.ingredientsService.findOne(milkSwapDto.newIngredientId, userId);
         if (!ingredient) throw new NotFoundException(`Ingredient ${milkSwapDto.newIngredientId} not found`);
       }
       const lineCost = Number(this.calculateLineCost(ingredient, pi.quantity, pi.unit).toFixed(2));
@@ -337,8 +356,8 @@ export class ProductsService {
     };
   }
 
-  async quickAction(id: string, quickActionDto: QuickActionDto): Promise<Product> {
-    const product = await this.findOne(id);
+  async quickAction(id: string, quickActionDto: QuickActionDto, userId: string): Promise<Product> {
+    const product = await this.findOne(id, userId); // Pass userId
     if (quickActionDto.new_sell_price <= 0) {
       throw new BadRequestException('New sell price must be positive');
     }
@@ -392,9 +411,9 @@ export class ProductsService {
     }
   }
 
-  private async getAvailableStock(ingredient: Ingredient, requestedUnit: string, requestedQuantity: number): Promise<Stock> {
+  private async getAvailableStock(ingredient: Ingredient, requestedUnit: string, requestedQuantity: number, userId: string): Promise<Stock> {
     console.log(`Checking stock for ingredient ${ingredient.id}, requested: ${requestedQuantity} ${requestedUnit}`);
-    const ingredientWithStocks = await this.ingredientsService.findOne(ingredient.id);
+    const ingredientWithStocks = await this.ingredientsService.findOne(ingredient.id, userId);
     const stocks = await this.stockRepository.find({ where: { ingredient: { id: ingredient.id } }, order: { purchased_at: 'ASC' } });
     console.log(`Stocks found:`, stocks);
     for (const stock of stocks) {
@@ -463,17 +482,17 @@ export class ProductsService {
     return Math.min(Math.max(marginPercent, -999.99), 999.99);
   }
 
-  async getMaxProducibleQuantity(productId: string): Promise<{ maxQuantity: number; stockUpdates: { ingredientId: string; remainingQuantity: number; unit: string }[] }> {
-    const product = await this.findOne(productId);
-    if (!product) throw new NotFoundException(`Product with ID ${productId} not found`);
+  async getMaxProducibleQuantity(productId: string, userId: string): Promise<{ maxQuantity: number; stockUpdates: { ingredientId: string; remainingQuantity: number; unit: string }[] }> {
+    const product = await this.findOne(productId, userId); // Pass userId
+    if (!product) throw new NotFoundException(`Product with ID ${productId} not found for this user`);
   
     let maxQuantity = Infinity;
     const stockUpdates: { [ingredientId: string]: { remainingQuantity: number; unit: string } } = {};
   
     for (const pi of product.ingredients) {
       const ingredientId = pi.ingredient.id;
-      const totalAvailable = await this.stockService.getAvailableStock(ingredientId);
-      const neededPerUnit = await this.convertQuantity(pi.quantity, pi.unit, 'L');
+      const totalAvailable = await this.stockService.getAvailableStock(ingredientId, userId);
+      const neededPerUnit = await this.convertQuantity(pi.quantity, pi.unit, pi.ingredient.unit);
       if (neededPerUnit <= 0) throw new BadRequestException(`Invalid quantity for ingredient ${ingredientId}`);
   
       const availableForThisIngredient = totalAvailable / neededPerUnit;
