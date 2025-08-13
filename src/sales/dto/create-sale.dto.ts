@@ -4,7 +4,10 @@ import { ApiProperty } from '@nestjs/swagger';
 export class CreateSaleDto {
   @IsString()
   @IsOptional()
-  @ApiProperty({ description: 'ID of the product sold (optional for unregistered products)', required: false })
+  @ApiProperty({
+    description: 'ID of the product sold (optional for unregistered products)',
+    required: false,
+  })
   productId?: string;
 
   @IsString()

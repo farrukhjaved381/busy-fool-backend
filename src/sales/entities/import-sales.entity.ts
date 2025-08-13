@@ -21,6 +21,6 @@ export class ImportSalesUnmatched {
   @Column({ default: false })
   isLinked: boolean;
 
-  @ManyToOne(() => User, user => user.id)
+  @ManyToOne(() => User, (user) => user.id)
   user: User;
 }

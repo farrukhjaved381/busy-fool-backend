@@ -1,6 +1,13 @@
 // src/users/dto/create-user.dto.ts
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsNotEmpty, IsString, IsEnum, MinLength, IsOptional } from 'class-validator';
+import {
+  IsEmail,
+  IsNotEmpty,
+  IsString,
+  IsEnum,
+  MinLength,
+  IsOptional,
+} from 'class-validator';
 import { UserRole } from '../user.entity';
 
 export class CreateUserDto {
@@ -14,23 +21,26 @@ export class CreateUserDto {
   @IsEmail()
   email: string;
 
-  @ApiProperty({ 
-    example: 'securePassword123', 
+  @ApiProperty({
+    example: 'securePassword123',
     description: 'Minimum 8 characters',
-    minLength: 8 
+    minLength: 8,
   })
   @IsNotEmpty()
   @MinLength(8)
   password: string;
 
-  @ApiProperty({ 
-    enum: ['owner', 'staff'], 
+  @ApiProperty({
+    enum: ['owner', 'staff'],
     default: 'owner',
-    required: false 
+    required: false,
   })
   @IsEnum(UserRole)
   @IsOptional()
-  @ApiProperty({ description: 'Role of the user (owner or staff)', enum: UserRole, required: false })
+  @ApiProperty({
+    description: 'Role of the user (owner or staff)',
+    enum: UserRole,
+    required: false,
+  })
   role?: UserRole;
 }
-

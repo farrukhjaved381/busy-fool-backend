@@ -32,25 +32,37 @@ export class CsvMappingsController {
   @Post('upload-temp')
   @ApiOperation({
     summary: 'Upload a CSV/XLSX temporarily to extract headers',
-    description: 'Uploads a CSV or Excel file to extract headers so the user can map POS columns to BusyFool fields.',
+    description:
+      'Uploads a CSV or Excel file to extract headers so the user can map POS columns to BusyFool fields.',
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
       type: 'object',
       properties: {
-        file: { type: 'string', format: 'binary', description: 'CSV or XLSX file' },
+        file: {
+          type: 'string',
+          format: 'binary',
+          description: 'CSV or XLSX file',
+        },
       },
       required: ['file'],
     },
   })
-  @ApiResponse({ status: 200, description: 'CSV/XLSX headers extracted', type: [String] })
-  @UseInterceptors(FileInterceptor('file', {
-    storage: diskStorage({
-      destination: './uploads/temp',
-      filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
-    })
-  }))
+  @ApiResponse({
+    status: 200,
+    description: 'CSV/XLSX headers extracted',
+    type: [String],
+  })
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: './uploads/temp',
+        filename: (req, file, cb) =>
+          cb(null, `${Date.now()}-${file.originalname}`),
+      }),
+    }),
+  )
   async uploadTemp(@UploadedFile() file: Express.Multer.File) {
     if (!file) throw new BadRequestException('No file uploaded');
     return this.csvService.getCsvHeaders(file.path);
@@ -61,7 +73,8 @@ export class CsvMappingsController {
   @ApiOperation({ summary: 'Save CSV -> BusyFool mappings for a user' })
   @ApiBody({
     type: SaveMappingDto,
-    description: 'userId and mappings array mapping POS headers -> busyfool fields',
+    description:
+      'userId and mappings array mapping POS headers -> busyfool fields',
   })
   @ApiResponse({ status: 201, description: 'Mapping saved successfully' })
   async saveMapping(@Body() body: SaveMappingDto) {
@@ -73,7 +86,8 @@ export class CsvMappingsController {
   @Post('import-sales')
   @ApiOperation({
     summary: 'Import sales from CSV/XLSX (preview or confirm)',
-    description: 'Upload CSV/XLSX with per-row total amount (Amount). confirm=false => dry-run, confirm=true => saves Sale rows.',
+    description:
+      'Upload CSV/XLSX with per-row total amount (Amount). confirm=false => dry-run, confirm=true => saves Sale rows.',
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -81,7 +95,11 @@ export class CsvMappingsController {
       type: 'object',
       properties: {
         userId: { type: 'string', example: 'uuid-of-user' },
-        confirm: { type: 'boolean', example: false, description: 'If false, dry-run (preview) only' },
+        confirm: {
+          type: 'boolean',
+          example: false,
+          description: 'If false, dry-run (preview) only',
+        },
         file: { type: 'string', format: 'binary' },
       },
       required: ['userId', 'file'],
@@ -103,28 +121,33 @@ export class CsvMappingsController {
             unitPrice: 3.8,
             saleDate: '2025-08-06T00:00:00.000Z',
             profit: 0,
-            profitMargin: 0
-          }
-        ]
-      }
-    }
+            profitMargin: 0,
+          },
+        ],
+      },
+    },
   })
-  @UseInterceptors(FileInterceptor('file', {
-    storage: diskStorage({
-      destination: './uploads/csv',
-      filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
-    })
-  }))
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: './uploads/csv',
+        filename: (req, file, cb) =>
+          cb(null, `${Date.now()}-${file.originalname}`),
+      }),
+    }),
+  )
   async importSales(
     @UploadedFile() file: Express.Multer.File,
     @Body() body: any, // Accept raw body because multipart fields arrive as strings
   ) {
     if (!file) throw new BadRequestException('No file uploaded');
-    if (!body || !body.userId) throw new BadRequestException('userId is required');
+    if (!body || !body.userId)
+      throw new BadRequestException('userId is required');
 
     // Coerce userId (strip quotes if user pasted string with quotes)
     let userId = String(body.userId).trim();
-    if (userId.startsWith('"') && userId.endsWith('"')) userId = userId.slice(1, -1);
+    if (userId.startsWith('"') && userId.endsWith('"'))
+      userId = userId.slice(1, -1);
 
     // Coerce confirm to boolean (multipart/form-data sends strings)
     let confirm = false;
@@ -141,7 +164,8 @@ export class CsvMappingsController {
   @Post('import-daily-sales')
   @ApiOperation({
     summary: 'Import daily sales (filename date fallback)',
-    description: 'Similar to import-sales but will use date from filename (e.g. items-report-YYYY-MM-DD_YYYY-MM-DD.csv) when sale_date column missing.',
+    description:
+      'Similar to import-sales but will use date from filename (e.g. items-report-YYYY-MM-DD_YYYY-MM-DD.csv) when sale_date column missing.',
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -155,22 +179,30 @@ export class CsvMappingsController {
       required: ['userId', 'file'],
     },
   })
-  @ApiResponse({ status: 200, description: 'Daily import preview or saved results' })
-  @UseInterceptors(FileInterceptor('file', {
-    storage: diskStorage({
-      destination: './uploads/csv',
-      filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
-    })
-  }))
+  @ApiResponse({
+    status: 200,
+    description: 'Daily import preview or saved results',
+  })
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: './uploads/csv',
+        filename: (req, file, cb) =>
+          cb(null, `${Date.now()}-${file.originalname}`),
+      }),
+    }),
+  )
   async importDailySales(
     @UploadedFile() file: Express.Multer.File,
     @Body() body: any,
   ) {
     if (!file) throw new BadRequestException('No file uploaded');
-    if (!body || !body.userId) throw new BadRequestException('userId is required');
+    if (!body || !body.userId)
+      throw new BadRequestException('userId is required');
 
     let userId = String(body.userId).trim();
-    if (userId.startsWith('"') && userId.endsWith('"')) userId = userId.slice(1, -1);
+    if (userId.startsWith('"') && userId.endsWith('"'))
+      userId = userId.slice(1, -1);
 
     let confirm = false;
     if (typeof body.confirm === 'string') {
@@ -183,11 +215,15 @@ export class CsvMappingsController {
   }
 }
 
-
 // ------------------ Lightweight Sales controller for daily summary ------------------
 
 import { Controller as C2, Get as G2 } from '@nestjs/common';
-import { ApiTags as ApiTags2, ApiOperation as ApiOperation2, ApiQuery as ApiQuery2, ApiResponse as ApiResponse2 } from '@nestjs/swagger';
+import {
+  ApiTags as ApiTags2,
+  ApiOperation as ApiOperation2,
+  ApiQuery as ApiQuery2,
+  ApiResponse as ApiResponse2,
+} from '@nestjs/swagger';
 
 @ApiTags2('Sales')
 @C2('sales')
@@ -195,7 +231,11 @@ export class SalesDailyController {
   constructor(private readonly csvService: CsvMappingsService) {}
 
   @G2('daily')
-  @ApiOperation2({ summary: 'Get daily sales summary', description: 'Returns aggregated daily sales for a user and optional date range' })
+  @ApiOperation2({
+    summary: 'Get daily sales summary',
+    description:
+      'Returns aggregated daily sales for a user and optional date range',
+  })
   @ApiQuery2({ name: 'userId', required: true, type: String })
   @ApiQuery2({ name: 'startDate', required: false, type: String })
   @ApiQuery2({ name: 'endDate', required: false, type: String })
@@ -204,11 +244,20 @@ export class SalesDailyController {
     description: 'Daily sales summary array',
     schema: {
       example: [
-        { date: '2025-08-06', totalSales: 489.3, totalProfit: 0, itemsSold: 127 }
-      ]
-    }
+        {
+          date: '2025-08-06',
+          totalSales: 489.3,
+          totalProfit: 0,
+          itemsSold: 127,
+        },
+      ],
+    },
   })
-  async getDailySales(@Query('userId') userId: string, @Query('startDate') startDate?: string, @Query('endDate') endDate?: string) {
+  async getDailySales(
+    @Query('userId') userId: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
     return this.csvService.getDailySales(userId, startDate, endDate);
   }
 }

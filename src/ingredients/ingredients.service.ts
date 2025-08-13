@@ -1,4 +1,8 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CreateIngredientDto } from './dto/create-ingredient.dto';
@@ -9,13 +13,26 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Stock } from '../stock/entities/stock.entity';
 import { UsersService } from '../users/users.service'; // Import UsersService
+import { ProductIngredient } from '../products/entities/product-ingredient.entity';
+import { Purchase } from '../purchases/entities/purchase.entity';
 
 /**
  * Service to manage ingredient-related operations including creation, updates, and CSV import.
  */
 @Injectable()
 export class IngredientsService {
-  private readonly expectedFields: string[] = ['name', 'unit', 'quantity', 'purchase_price', 'waste_percent', 'cost_per_ml', 'cost_per_gram', 'cost_per_unit', 'supplier', 'stock'];
+  private readonly expectedFields: string[] = [
+    'name',
+    'unit',
+    'quantity',
+    'purchase_price',
+    'waste_percent',
+    'cost_per_ml',
+    'cost_per_gram',
+    'cost_per_unit',
+    'supplier',
+    'stock',
+  ];
   private readonly requiredFields: string[] = ['name', 'unit', 'quantity'];
   private readonly fieldTypes: Record<string, string> = {
     name: 'string',
@@ -35,6 +52,10 @@ export class IngredientsService {
     private readonly ingredientRepository: Repository<Ingredient>,
     @InjectRepository(Stock)
     private readonly stockRepository: Repository<Stock>,
+    @InjectRepository(ProductIngredient)
+    private readonly productIngredientRepository: Repository<ProductIngredient>,
+    @InjectRepository(Purchase)
+    private readonly purchaseRepository: Repository<Purchase>,
     private readonly usersService: UsersService, // Inject UsersService
   ) {}
 
@@ -44,22 +65,39 @@ export class IngredientsService {
    * @returns The created ingredient
    * @throws BadRequestException if quantity is invalid or waste percent is out of range
    */
-  async create(createIngredientDto: CreateIngredientDto, userId: string): Promise<Ingredient> {
+  async create(
+    createIngredientDto: CreateIngredientDto,
+    userId: string,
+  ): Promise<Ingredient> {
     const user = await this.usersService.findById(userId);
     if (!user) throw new BadRequestException('User not found');
+
+    const existing = await this.ingredientRepository.findOne({
+      where: { name: createIngredientDto.name, user: { id: userId } },
+    });
+    if (existing) throw new BadRequestException('Ingredient already exists');
 
     if (!createIngredientDto.quantity || createIngredientDto.quantity <= 0) {
       throw new BadRequestException('Quantity must be a positive number');
     }
-    if (createIngredientDto.waste_percent < 0 || createIngredientDto.waste_percent > 100) {
-      throw new BadRequestException('Waste percentage must be between 0 and 100');
+    if (
+      createIngredientDto.waste_percent < 0 ||
+      createIngredientDto.waste_percent > 100
+    ) {
+      throw new BadRequestException(
+        'Waste percentage must be between 0 and 100',
+      );
     }
 
-    const ingredient = this.ingredientRepository.create({ ...createIngredientDto, user }); // Associate with user
+    const ingredient = this.ingredientRepository.create({
+      ...createIngredientDto,
+      user,
+    }); // Associate with user
     const savedIngredient = await this.ingredientRepository.save(ingredient);
 
-    const usablePercentage = 1 - (createIngredientDto.waste_percent / 100);
-    const purchasePricePerUnit = createIngredientDto.purchase_price / createIngredientDto.quantity;
+    const usablePercentage = 1 - createIngredientDto.waste_percent / 100;
+    const purchasePricePerUnit =
+      createIngredientDto.purchase_price / createIngredientDto.quantity;
     const totalPurchasedPrice = createIngredientDto.purchase_price;
     const stock = this.stockRepository.create({
       ingredient: { id: savedIngredient.id },
@@ -86,7 +124,10 @@ export class IngredientsService {
     return this.ingredientRepository.save(savedIngredient);
   }
 
-  async bulkCreate(createIngredientDtos: CreateIngredientDto[], userId: string): Promise<Ingredient[]> {
+  async bulkCreate(
+    createIngredientDtos: CreateIngredientDto[],
+    userId: string,
+  ): Promise<Ingredient[]> {
     const user = await this.usersService.findById(userId);
     if (!user) throw new BadRequestException('User not found');
 
@@ -95,17 +136,26 @@ export class IngredientsService {
     }
     const ingredients = [];
     for (const dto of createIngredientDtos) {
+      const existing = await this.ingredientRepository.findOne({
+        where: { name: dto.name, user: { id: userId } },
+      });
+      if (existing)
+        throw new BadRequestException(
+          `Ingredient '${dto.name}' already exists`,
+        );
       if (!dto.quantity || dto.quantity <= 0) {
         throw new BadRequestException('Quantity must be a positive number');
       }
       if (dto.waste_percent < 0 || dto.waste_percent > 100) {
-        throw new BadRequestException('Waste percentage must be between 0 and 100');
+        throw new BadRequestException(
+          'Waste percentage must be between 0 and 100',
+        );
       }
 
       const ingredient = this.ingredientRepository.create({ ...dto, user }); // Associate with user
       const savedIngredient = await this.ingredientRepository.save(ingredient);
 
-      const usablePercentage = 1 - (dto.waste_percent / 100);
+      const usablePercentage = 1 - dto.waste_percent / 100;
       const purchasePricePerUnit = dto.purchase_price / dto.quantity;
       const totalPurchasedPrice = dto.purchase_price;
       const stock = this.stockRepository.create({
@@ -155,23 +205,36 @@ export class IngredientsService {
     }
 
     const headers = await this.extractHeaders(file.path);
-    const { suggestedMappings, unmappedColumns, warnings } = this.generateMappings(headers);
+    const { suggestedMappings, unmappedColumns, warnings } =
+      this.generateMappings(headers);
     const autoMapping = this.generateAutoMapping(headers, suggestedMappings);
 
-    const missingRequired = this.requiredFields.filter(f => !Object.values(autoMapping).some(v => v === f));
+    const missingRequired = this.requiredFields.filter(
+      (f) => !Object.values(autoMapping).some((v) => v === f),
+    );
     if (missingRequired.length > 0) {
-      throw new BadRequestException(`Missing required fields in CSV: ${missingRequired.join(', ')}. Ensure your CSV includes columns for ${this.requiredFields.join(', ')}.`);
+      throw new BadRequestException(
+        `Missing required fields in CSV: ${missingRequired.join(', ')}. Ensure your CSV includes columns for ${this.requiredFields.join(', ')}.`,
+      );
     }
 
     const results: Ingredient[] = [];
     const errors: string[] = [];
     let dataRows = 0;
 
-    const parser = fs.createReadStream(file.path)
+    const parser = fs
+      .createReadStream(file.path)
       .pipe(csv.parse({ columns: true, trim: true, skip_empty_lines: true }));
     for await (const row of parser) {
       dataRows++;
       try {
+        const existing = await this.ingredientRepository.findOne({
+          where: { name: row[autoMapping['name']], user: { id: userId } },
+        });
+        if (existing)
+          throw new Error(
+            `Ingredient '${row[autoMapping['name']]}' already exists`,
+          );
         const createDto: CreateIngredientDto = {
           name: row[autoMapping['name']] || 'Unknown',
           unit: row[autoMapping['unit']] || 'Unknown',
@@ -188,11 +251,16 @@ export class IngredientsService {
           throw new Error('Waste percentage must be between 0 and 100');
         }
 
-        const ingredient = this.ingredientRepository.create({ ...createDto, user }); // Associate with user
-        const savedIngredient = await this.ingredientRepository.save(ingredient);
+        const ingredient = this.ingredientRepository.create({
+          ...createDto,
+          user,
+        }); // Associate with user
+        const savedIngredient =
+          await this.ingredientRepository.save(ingredient);
 
-        const usablePercentage = 1 - (createDto.waste_percent / 100);
-        const purchasePricePerUnit = createDto.purchase_price / createDto.quantity;
+        const usablePercentage = 1 - createDto.waste_percent / 100;
+        const purchasePricePerUnit =
+          createDto.purchase_price / createDto.quantity;
         const totalPurchasedPrice = createDto.purchase_price;
         const stock = this.stockRepository.create({
           ingredient: { id: savedIngredient.id },
@@ -207,18 +275,21 @@ export class IngredientsService {
         });
         await this.stockRepository.save(stock);
 
-        const { cost_per_ml, cost_per_gram, cost_per_unit } = this.calculateCosts(
-          createDto.purchase_price,
-          createDto.waste_percent,
-          createDto.unit,
-          createDto.quantity,
-        );
+        const { cost_per_ml, cost_per_gram, cost_per_unit } =
+          this.calculateCosts(
+            createDto.purchase_price,
+            createDto.waste_percent,
+            createDto.unit,
+            createDto.quantity,
+          );
         savedIngredient.cost_per_ml = cost_per_ml ?? null;
         savedIngredient.cost_per_gram = cost_per_gram ?? null;
         savedIngredient.cost_per_unit = cost_per_unit ?? null;
         results.push(await this.ingredientRepository.save(savedIngredient));
       } catch (error) {
-        errors.push(`Row ${dataRows}: ${error.message} (Details: ${JSON.stringify(row)})`);
+        errors.push(
+          `Row ${dataRows}: ${error.message} (Details: ${JSON.stringify(row)})`,
+        );
       }
     }
 
@@ -245,7 +316,8 @@ export class IngredientsService {
    * @param userId The ID of the user
    * @returns List of all ingredients for the user
    */
-  async findAll(userId: string): Promise<Ingredient[]> { // Modified to accept userId
+  async findAll(userId: string): Promise<Ingredient[]> {
+    // Modified to accept userId
     return this.ingredientRepository.find({
       where: { user: { id: userId } }, // Filter by user ID
       relations: ['stocks'],
@@ -264,9 +336,14 @@ export class IngredientsService {
    * @throws NotFoundException if ingredient is not found for this user
    */
   async findOne(id: string, userId: string): Promise<Ingredient> {
-    const ingredient = await this.ingredientRepository.findOne({ where: { id, user: { id: userId } }, relations: ['stocks'] });
+    const ingredient = await this.ingredientRepository.findOne({
+      where: { id, user: { id: userId } },
+      relations: ['stocks'],
+    });
     if (!ingredient) {
-      throw new NotFoundException(`Ingredient with ID ${id} not found for this user`);
+      throw new NotFoundException(
+        `Ingredient with ID ${id} not found for this user`,
+      );
     }
     return ingredient;
   }
@@ -280,24 +357,45 @@ export class IngredientsService {
    * @throws BadRequestException if waste percent is out of range or quantity is insufficient
    * @throws NotFoundException if ingredient is not found for this user
    */
-  async update(id: string, updateIngredientDto: UpdateIngredientDto, userId: string): Promise<Ingredient> {
-    const ingredient = await this.ingredientRepository.findOne({ where: { id, user: { id: userId } } });
+  async update(
+    id: string,
+    updateIngredientDto: UpdateIngredientDto,
+    userId: string,
+  ): Promise<Ingredient> {
+    const ingredient = await this.ingredientRepository.findOne({
+      where: { id, user: { id: userId } },
+    });
     if (!ingredient) {
-      throw new NotFoundException(`Ingredient with ID ${id} not found for this user`);
+      throw new NotFoundException(
+        `Ingredient with ID ${id} not found for this user`,
+      );
     }
-    if (updateIngredientDto.waste_percent && (updateIngredientDto.waste_percent < 0 || updateIngredientDto.waste_percent > 100)) {
-      throw new BadRequestException('Waste percentage must be between 0 and 100');
+    if (
+      updateIngredientDto.waste_percent &&
+      (updateIngredientDto.waste_percent < 0 ||
+        updateIngredientDto.waste_percent > 100)
+    ) {
+      throw new BadRequestException(
+        'Waste percentage must be between 0 and 100',
+      );
     }
 
-    const newPurchasePrice = updateIngredientDto.purchase_price ?? ingredient.purchase_price;
-    const newWastePercent = updateIngredientDto.waste_percent ?? ingredient.waste_percent;
+    const newPurchasePrice =
+      updateIngredientDto.purchase_price ?? ingredient.purchase_price;
+    const newWastePercent =
+      updateIngredientDto.waste_percent ?? ingredient.waste_percent;
     const newUnit = updateIngredientDto.unit ?? ingredient.unit;
     const newQuantity = updateIngredientDto.quantity ?? ingredient.quantity;
 
     // Check if existing stock is sufficient for new quantity
-    const totalUsed = (await this.stockRepository.sum('remaining_quantity', { ingredient: { id } })) || 0;
+    const totalUsed =
+      (await this.stockRepository.sum('remaining_quantity', {
+        ingredient: { id },
+      })) || 0;
     if (newQuantity < totalUsed) {
-      throw new BadRequestException(`New quantity (${newQuantity}) cannot be less than used stock (${totalUsed})`);
+      throw new BadRequestException(
+        `New quantity (${newQuantity}) cannot be less than used stock (${totalUsed})`,
+      );
     }
 
     const { cost_per_ml, cost_per_gram, cost_per_unit } = this.calculateCosts(
@@ -318,9 +416,12 @@ export class IngredientsService {
     });
 
     // Update existing stock instead of creating new
-    const stock = await this.stockRepository.findOne({ where: { ingredient: { id } }, order: { purchased_at: 'DESC' } });
+    const stock = await this.stockRepository.findOne({
+      where: { ingredient: { id } },
+      order: { purchased_at: 'DESC' },
+    });
     if (stock) {
-      const usablePercentage = 1 - (newWastePercent / 100);
+      const usablePercentage = 1 - newWastePercent / 100;
       stock.purchased_quantity = newQuantity;
       stock.unit = newUnit;
       stock.total_purchased_price = newPurchasePrice; // Corrected to use total_purchased_price
@@ -340,17 +441,40 @@ export class IngredientsService {
    * @throws NotFoundException if ingredient is not found for this user
    */
   async remove(id: string, userId: string): Promise<void> {
-    const ingredient = await this.ingredientRepository.findOne({ where: { id, user: { id: userId } } });
+    const ingredient = await this.ingredientRepository.findOne({
+      where: { id, user: { id: userId } },
+      relations: ['productIngredients'],
+    });
+
     if (!ingredient) {
-      throw new NotFoundException(`Ingredient with ID ${id} not found for this user`);
+      throw new NotFoundException(
+        `Ingredient with ID ${id} not found for this user`,
+      );
     }
+
+    // Remove associations from products
+    if (
+      ingredient.productIngredients &&
+      ingredient.productIngredients.length > 0
+    ) {
+      await this.productIngredientRepository.remove(
+        ingredient.productIngredients,
+      );
+    }
+
+    // Delete related purchases
+    await this.purchaseRepository.delete({ ingredient: { id } });
+
+    // Delete related stock entries
     await this.stockRepository.delete({ ingredient: { id } });
+
+    // Finally, remove the ingredient itself
     await this.ingredientRepository.remove(ingredient);
   }
 
   private calculateSimilarity(s1: string, s2: string): number {
-    const tokens1 = s1.split(/[_ ]/).filter(t => t.toLowerCase());
-    const tokens2 = s2.split(/[_ ]/).filter(t => t.toLowerCase());
+    const tokens1 = s1.split(/[_ ]/).filter((t) => t.toLowerCase());
+    const tokens2 = s2.split(/[_ ]/).filter((t) => t.toLowerCase());
     let commonTokens = 0;
     const weightMap: Record<string, number> = {
       name: 1.0,
@@ -369,24 +493,54 @@ export class IngredientsService {
     for (let i = 0; i < tokens1.length; i++) {
       for (let j = 0; j < tokens2.length; j++) {
         if (tokens1[i] === tokens2[j]) {
-          const weight = (i === tokens1.length - 1 || j === tokens2.length - 1) ? lastTokenWeight : 1;
+          const weight =
+            i === tokens1.length - 1 || j === tokens2.length - 1
+              ? lastTokenWeight
+              : 1;
           commonTokens += weight * (weightMap[tokens2[j]] || 1);
         }
       }
     }
 
     const maxTokens = Math.max(
-      tokens1.reduce((sum, t, i) => sum + ((i === tokens1.length - 1) ? lastTokenWeight : 1) * (weightMap[t] || 1), 0),
-      tokens2.reduce((sum, t, i) => sum + ((i === tokens2.length - 1) ? lastTokenWeight : 1) * (weightMap[t] || 1), 0),
+      tokens1.reduce(
+        (sum, t, i) =>
+          sum +
+          (i === tokens1.length - 1 ? lastTokenWeight : 1) *
+            (weightMap[t] || 1),
+        0,
+      ),
+      tokens2.reduce(
+        (sum, t, i) =>
+          sum +
+          (i === tokens2.length - 1 ? lastTokenWeight : 1) *
+            (weightMap[t] || 1),
+        0,
+      ),
     );
     return maxTokens ? commonTokens / maxTokens : 0;
   }
 
   private isValidMapping(header: string, field: string): boolean {
-    const headerTokens = header.toLowerCase().split(/[_ ]/).filter(t => t);
+    const headerTokens = header
+      .toLowerCase()
+      .split(/[_ ]/)
+      .filter((t) => t);
     const fieldType = this.fieldTypes[field];
-    return !(fieldType === 'number' && !headerTokens.some(t => ['price', 'cost', 'percent', 'quantity', 'stock'].includes(t))) &&
-      !(fieldType === 'string' && headerTokens.some(t => ['price', 'cost', 'percent', 'quantity', 'stock'].includes(t)));
+    return (
+      !(
+        fieldType === 'number' &&
+        !headerTokens.some((t) =>
+          ['price', 'cost', 'percent', 'quantity', 'stock'].includes(t),
+        )
+      ) &&
+      !(
+        fieldType === 'string' &&
+        headerTokens.some((t) =>
+          ['price', 'cost', 'percent', 'quantity', 'stock'].includes(t),
+        )
+      )
+    );
   }
 
   private levenshteinDistance(s1: string, s2: string): number {
@@ -398,20 +552,30 @@ export class IngredientsService {
     for (let i = 1; i <= s2.length; i++) {
       for (let j = 1; j <= s1.length; j++) {
         const cost = s1[j - 1] === s2[i - 1] ? 0 : 1;
-        matrix[i][j] = Math.min(matrix[i - 1][j] + 1, matrix[i][j - 1] + 1, matrix[i - 1][j - 1] + cost);
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j - 1] + cost,
+        );
       }
     }
     return matrix[s2.length][s1.length];
   }
 
   private extractHeaders(filePath: string): Promise<string[]> {
-    return fs.promises.readFile(filePath, 'utf8').then(content => {
+    return fs.promises.readFile(filePath, 'utf8').then((content) => {
       const firstLine = content.split('\n')[0].trim();
-      return firstLine ? firstLine.split(',').map(header => header.trim()) : [];
+      return firstLine
+        ? firstLine.split(',').map((header) => header.trim())
+        : [];
     });
   }
 
-  private generateMappings(headers: string[]): { suggestedMappings: Record<string, string>; unmappedColumns: string[]; warnings: string[] } {
+  private generateMappings(headers: string[]): {
+    suggestedMappings: Record<string, string>;
+    unmappedColumns: string[];
+    warnings: string[];
+  } {
     const suggestedMappings: Record<string, string> = {};
     const unmappedColumns: string[] = [];
     const warnings: string[] = [];
@@ -420,12 +584,21 @@ export class IngredientsService {
     for (const header of headers) {
       let bestMatch = header;
       let maxSimilarity = 0;
-      const normalizedHeader = header.toLowerCase().replace(/^(my_|my|_full(name)?)$/, '').trim();
+      const normalizedHeader = header
+        .toLowerCase()
+        .replace(/^(my_|my|_full(name)?)$/, '')
+        .trim();
 
       for (const field of this.expectedFields) {
         const normalizedField = field.toLowerCase();
-        let similarity = this.calculateSimilarity(normalizedHeader, normalizedField);
-        const distance = this.levenshteinDistance(normalizedHeader, normalizedField);
+        let similarity = this.calculateSimilarity(
+          normalizedHeader,
+          normalizedField,
+        );
+        const distance = this.levenshteinDistance(
+          normalizedHeader,
+          normalizedField,
+        );
         if (distance <= 2 && this.requiredFields.includes(field)) {
           similarity += 0.4;
         }
@@ -433,23 +606,36 @@ export class IngredientsService {
           maxSimilarity = similarity;
           bestMatch = field;
         }
-        const warningThreshold = this.requiredFields.includes(field) ? 0.5 : 0.4;
+        const warningThreshold = this.requiredFields.includes(field)
+          ? 0.5
+          : 0.4;
         if (similarity >= warningThreshold) {
-          uniqueWarnings.add(`Possible match for ${field} in ${header} (${similarity.toFixed(2)})`);
+          uniqueWarnings.add(
+            `Possible match for ${field} in ${header} (${similarity.toFixed(2)})`,
+          );
         }
       }
 
-      const distance = this.levenshteinDistance(header.toLowerCase(), bestMatch.toLowerCase());
-      if (maxSimilarity >= 0.5 || (distance <= 2 && this.requiredFields.includes(bestMatch))) {
+      const distance = this.levenshteinDistance(
+        header.toLowerCase(),
+        bestMatch.toLowerCase(),
+      );
+      if (
+        maxSimilarity >= 0.5 ||
+        (distance <= 2 && this.requiredFields.includes(bestMatch))
+      ) {
         suggestedMappings[header] = bestMatch;
       } else {
         unmappedColumns.push(header);
         const typoSuggestions = this.expectedFields
-          .filter(f => {
-            const dist = this.levenshteinDistance(header.toLowerCase(), f.toLowerCase());
+          .filter((f) => {
+            const dist = this.levenshteinDistance(
+              header.toLowerCase(),
+              f.toLowerCase(),
+            );
             return dist <= 2;
           })
-          .map(f => `Possible typo correction: ${header} → ${f}`);
+          .map((f) => `Possible typo correction: ${header} → ${f}`);
         if (typoSuggestions.length > 0) {
           warnings.push(...typoSuggestions);
         }
@@ -460,7 +646,10 @@ export class IngredientsService {
     return { suggestedMappings, unmappedColumns, warnings };
   }
 
-  private generateAutoMapping(headers: string[], suggestedMappings: Record<string, string>): Record<string, string> {
+  private generateAutoMapping(
+    headers: string[],
+    suggestedMappings: Record<string, string>,
+  ): Record<string, string> {
     const autoMapping: Record<string, string> = {};
     for (const header of headers) {
       autoMapping[header] = suggestedMappings[header] || 'undefined';
@@ -468,25 +657,34 @@ export class IngredientsService {
     return autoMapping;
   }
 
-  private calculateCosts(purchase_price: number, waste_percent: number, unit: string, quantity: number): {
+  private calculateCosts(
+    purchase_price: number,
+    waste_percent: number,
+    unit: string,
+    quantity: number,
+  ): {
     cost_per_ml: number | undefined;
     cost_per_gram: number | undefined;
     cost_per_unit: number | undefined;
   } {
     if (waste_percent < 0 || waste_percent > 100) {
-      throw new BadRequestException('Waste percentage must be between 0 and 100');
+      throw new BadRequestException(
+        'Waste percentage must be between 0 and 100',
+      );
     }
-    const usablePercentage = 1 - (waste_percent / 100);
+    const usablePercentage = 1 - waste_percent / 100;
     if (usablePercentage <= 0) {
-      throw new BadRequestException('Waste percent results in zero or negative usable quantity.');
+      throw new BadRequestException(
+        'Waste percent results in zero or negative usable quantity.',
+      );
     }
 
     let totalQuantity = quantity || 1;
     let isMilliliters = unit.toLowerCase().includes('ml');
-    let isLiters = unit.toLowerCase().includes('l');
+    const isLiters = unit.toLowerCase().includes('l');
     let isGrams = unit.toLowerCase().includes('g');
-    let isKilograms = unit.toLowerCase().includes('kg');
-    let isUnits = !isMilliliters && !isLiters && !isGrams && !isKilograms;
+    const isKilograms = unit.toLowerCase().includes('kg');
+    const isUnits = !isMilliliters && !isLiters && !isGrams && !isKilograms;
 
     if (isLiters) totalQuantity *= 1000; // Convert L to ml
     if (isKilograms) totalQuantity *= 1000; // Convert kg to g

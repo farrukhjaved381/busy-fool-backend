@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, getManager } from 'typeorm';
 import { Waste } from './entities/waste.entity';
@@ -32,31 +36,40 @@ export class WasteService {
     }
 
     // Use transaction to ensure atomicity
-    const waste = await getManager().transaction(async transactionalEntityManager => {
-      const stock = await transactionalEntityManager.findOne(Stock, { where: { id: stockId }, relations: ['ingredient'] });
-      if (!stock) throw new NotFoundException(`Stock ${stockId} not found`);
+    const waste = await getManager().transaction(
+      async (transactionalEntityManager) => {
+        const stock = await transactionalEntityManager.findOne(Stock, {
+          where: { id: stockId },
+          relations: ['ingredient'],
+        });
+        if (!stock) throw new NotFoundException(`Stock ${stockId} not found`);
 
-      const convertedQuantity = await this.stockService.convertQuantity(quantity, unit, stock.unit);
-      if (convertedQuantity > stock.remaining_quantity) {
-        throw new BadRequestException(
-          `Insufficient stock for waste recording. Available: ${stock.remaining_quantity.toFixed(2)} ${stock.unit}, Requested: ${convertedQuantity.toFixed(2)} ${stock.unit}`
+        const convertedQuantity = await this.stockService.convertQuantity(
+          quantity,
+          unit,
+          stock.unit,
         );
-      }
+        if (convertedQuantity > stock.remaining_quantity) {
+          throw new BadRequestException(
+            `Insufficient stock for waste recording. Available: ${stock.remaining_quantity.toFixed(2)} ${stock.unit}, Requested: ${convertedQuantity.toFixed(2)} ${stock.unit}`,
+          );
+        }
 
-      // Update stock
-      stock.remaining_quantity -= convertedQuantity;
-      stock.wasted_quantity += convertedQuantity;
-      await transactionalEntityManager.save(Stock, stock);
+        // Update stock
+        stock.remaining_quantity -= convertedQuantity;
+        stock.wasted_quantity += convertedQuantity;
+        await transactionalEntityManager.save(Stock, stock);
 
-      // Create waste record
-      const newWaste = transactionalEntityManager.create(Waste, {
-        stock: { id: stockId }, // Use stock ID for relation
-        quantity: convertedQuantity,
-        unit: stock.unit,
-        reason,
-      });
-      return await transactionalEntityManager.save(Waste, newWaste);
-    });
+        // Create waste record
+        const newWaste = transactionalEntityManager.create(Waste, {
+          stock: { id: stockId }, // Use stock ID for relation
+          quantity: convertedQuantity,
+          unit: stock.unit,
+          reason,
+        });
+        return await transactionalEntityManager.save(Waste, newWaste);
+      },
+    );
 
     return waste;
   }
@@ -66,6 +79,8 @@ export class WasteService {
    * @returns List of all waste records
    */
   async findAll(): Promise<Waste[]> {
-    return this.wasteRepository.find({ relations: ['stock', 'stock.ingredient'] });
+    return this.wasteRepository.find({
+      relations: ['stock', 'stock.ingredient'],
+    });
   }
 }

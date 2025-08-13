@@ -1,4 +1,10 @@
-import { Column, Entity, PrimaryGeneratedColumn, ManyToOne, CreateDateColumn } from 'typeorm';
+import {
+  Column,
+  Entity,
+  PrimaryGeneratedColumn,
+  ManyToOne,
+  CreateDateColumn,
+} from 'typeorm';
 import { ApiProperty } from '@nestjs/swagger';
 import { Product } from '../../products/entities/product.entity';
 import { User } from '../../users/user.entity';
@@ -9,16 +15,27 @@ export class Sale {
   @ApiProperty({ description: 'Unique identifier for the sale' })
   id: string;
 
-  @ManyToOne(() => Product, { eager: true, nullable: true })
-  @ApiProperty({ description: 'Product sold (nullable for unregistered products)', type: () => Product, required: false })
+  @ManyToOne(() => Product, {
+    eager: true,
+    nullable: true,
+    onDelete: 'CASCADE',
+  })
+  @ApiProperty({
+    description: 'Product sold (nullable for unregistered products)',
+    type: () => Product,
+    required: false,
+  })
   product: Product;
 
   @Column({ nullable: true })
-  @ApiProperty({ description: 'Name of the product at time of sale (for unregistered products)', required: false })
+  @ApiProperty({
+    description:
+      'Name of the product at time of sale (for unregistered products)',
+    required: false,
+  })
   product_name: string;
 
-  @ManyToOne(() => User)
-  @ApiProperty({ description: 'User who recorded the sale', type: () => User })
+  @ManyToOne(() => User, (user) => user.sales, { onDelete: 'CASCADE' })
   user: User;
 
   @Column('decimal', { precision: 10, scale: 2 })

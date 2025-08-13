@@ -8,7 +8,13 @@ import { StockModule } from '../stock/stock.module';
 import { SalesModule } from '../sales/sales.module';
 
 @Module({
-  imports: [PurchasesModule, ProductsModule, IngredientsModule, StockModule, SalesModule],
+  imports: [
+    PurchasesModule,
+    ProductsModule,
+    IngredientsModule,
+    StockModule,
+    SalesModule,
+  ],
   controllers: [DashboardController],
   providers: [DashboardService],
 })

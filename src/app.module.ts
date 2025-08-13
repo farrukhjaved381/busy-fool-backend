@@ -11,19 +11,10 @@ import { IngredientsModule } from './ingredients/ingredients.module';
 import { ProductsModule } from './products/products.module';
 import { SalesModule } from './sales/sales.module';
 import { PurchasesModule } from './purchases/purchases.module';
-import { User } from './users/user.entity';
-import { Ingredient } from './ingredients/entities/ingredient.entity';
-import { Product } from './products/entities/product.entity';
-import { ProductIngredient } from './products/entities/product-ingredient.entity';
-import { Sale } from './sales/entities/sale.entity';
-import { Stock } from './stock/entities/stock.entity';
 import { StockModule } from './stock/stock.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { WasteModule } from './waste/waste.module';
-import { Waste } from './waste/entities/waste.entity';
 import { DashboardModule } from './dashboard/dashboard.module';
-import { CsvMappingsController } from './csv_mappings/csv_mappings.controller';
-import { CsvMappingsService } from './csv_mappings/csv_mappings.service';
 import { CsvMappingsModule } from './csv_mappings/csv_mappings.module';
 
 @Module({
@@ -53,7 +44,7 @@ import { CsvMappingsModule } from './csv_mappings/csv_mappings.module';
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],
-      useFactory: async (configService: ConfigService) => ({
+      useFactory: (configService: ConfigService) => ({
         secret: configService.get('JWT_SECRET'),
         signOptions: { expiresIn: configService.get('JWT_EXPIRES_IN') },
       }),

@@ -18,7 +18,7 @@ import { WasteModule } from './waste/waste.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { CsvMappingsModule } from './csv_mappings/csv_mappings.module';
 import { ConfigService } from '@nestjs/config';
-
+import { User } from './users/user.entity';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -31,7 +31,10 @@ async function bootstrap() {
     .setTitle('Busy Fool API')
     .setDescription('Coffee Shop Management System')
     .setVersion('1.0')
-    .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }, 'JWT')
+    .addBearerAuth(
+      { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
+      'JWT',
+    )
     .build();
   const document = SwaggerModule.createDocument(app, config, {
     include: [
@@ -48,6 +51,7 @@ async function bootstrap() {
       DashboardModule,
       CsvMappingsModule,
     ],
+    extraModels: [User],
   });
   SwaggerModule.setup('api', app, document, {
     swaggerOptions: { persistAuthorization: true },

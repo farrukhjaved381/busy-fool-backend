@@ -1,4 +1,11 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, CreateDateColumn } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  ManyToOne,
+  JoinColumn,
+  CreateDateColumn,
+} from 'typeorm';
 import { Stock } from '../../stock/entities/stock.entity';
 
 @Entity()
@@ -6,7 +13,7 @@ export class Waste {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @ManyToOne(() => Stock, stock => stock.wastes)
+  @ManyToOne(() => Stock, (stock) => stock.wastes)
   @JoinColumn()
   stock: Stock;
 

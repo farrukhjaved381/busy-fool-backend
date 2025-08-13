@@ -1,5 +1,12 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsNumber, IsString, Min, Max, IsOptional } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsNumber,
+  IsString,
+  Min,
+  Max,
+  IsOptional,
+} from 'class-validator';
 
 export class CreateStockDto {
   @ApiProperty({ description: 'ID of the ingredient' })
@@ -22,7 +29,11 @@ export class CreateStockDto {
   @Min(0)
   purchase_price: number;
 
-  @ApiProperty({ description: 'Percentage of waste expected (0-100)', required: false, default: 0 })
+  @ApiProperty({
+    description: 'Percentage of waste expected (0-100)',
+    required: false,
+    default: 0,
+  })
   @IsNumber()
   @Min(0)
   @Max(100)

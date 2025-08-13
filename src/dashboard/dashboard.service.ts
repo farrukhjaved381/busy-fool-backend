@@ -22,36 +22,63 @@ export class DashboardService {
     const stocks = await this.stockService.findAllByUser(userId);
     const sales = await this.salesService.findAllByUser(userId);
 
-    const totalSales = sales.reduce((sum, s) => sum + Number(s.total_amount), 0);
+    const totalSales = sales.reduce(
+      (sum, s) => sum + Number(s.total_amount),
+      0,
+    );
     const salesCount = sales.length;
-    const totalPurchasesCost = stocks.reduce((sum, s) => sum + Number(s.total_purchased_price), 0);
+    const totalPurchasesCost = stocks.reduce(
+      (sum, s) => sum + Number(s.total_purchased_price),
+      0,
+    );
     const purchaseCount = purchases.length;
-    const totalProductCost = products.reduce((sum, p) => sum + Number(p.total_cost), 0);
+    const totalProductCost = products.reduce(
+      (sum, p) => sum + Number(p.total_cost),
+      0,
+    );
     const totalProfit = totalSales - totalProductCost;
-    const totalMargin = products.reduce((sum, p) => sum + Number(p.margin_amount || 0), 0);
+    const totalMargin = products.reduce(
+      (sum, p) => sum + Number(p.margin_amount || 0),
+      0,
+    );
     const avgMarginPercent = products.length
-      ? (totalMargin / products.reduce((sum, p) => sum + Number(p.sell_price || 0), 0) * 100)
+      ? (totalMargin /
+          products.reduce((sum, p) => sum + Number(p.sell_price || 0), 0)) *
+        100
       : 0;
-    const avgPurchasePrice = purchaseCount ? totalPurchasesCost / purchaseCount : 0;
-    const totalStock = stocks.reduce((sum, s) => sum + Number(s.remaining_quantity || 0), 0);
-    const lowStockIngredients = ingredients.filter(i => {
-      const stock = stocks.find(s => s.ingredient && s.ingredient.id === i.id);
+    const avgPurchasePrice = purchaseCount
+      ? totalPurchasesCost / purchaseCount
+      : 0;
+    const totalStock = stocks.reduce(
+      (sum, s) => sum + Number(s.remaining_quantity || 0),
+      0,
+    );
+    const lowStockIngredients = ingredients.filter((i) => {
+      const stock = stocks.find(
+        (s) => s.ingredient && s.ingredient.id === i.id,
+      );
       return stock && Number(stock.remaining_quantity) < 0.5;
     });
     const latestPurchases = purchases
-      .sort((a, b) => new Date(b.purchase_date).getTime() - new Date(a.purchase_date).getTime())
+      .sort(
+        (a, b) =>
+          new Date(b.purchase_date).getTime() -
+          new Date(a.purchase_date).getTime(),
+      )
       .slice(0, 5);
 
     const suggestions = {
       stockManagement: lowStockIngredients.length
-        ? `Restock ${lowStockIngredients.map(i => i.name).join(', ')}`
+        ? `Restock ${lowStockIngredients.map((i) => i.name).join(', ')}`
         : 'All stocks are sufficient.',
-      priceOptimization: avgPurchasePrice > 100
-        ? 'Review high purchase prices for cost savings.'
-        : 'Purchase prices are optimized.',
-      salesBoost: salesCount < 5
-        ? 'Consider promoting low-selling products.'
-        : 'Sales performance is strong.',
+      priceOptimization:
+        avgPurchasePrice > 100
+          ? 'Review high purchase prices for cost savings.'
+          : 'Purchase prices are optimized.',
+      salesBoost:
+        salesCount < 5
+          ? 'Consider promoting low-selling products.'
+          : 'Sales performance is strong.',
     };
 
     return {
@@ -69,7 +96,7 @@ export class DashboardService {
         totalStock: Number(totalStock.toFixed(2)),
         lowStockCount: lowStockIngredients.length,
       },
-      products: products.map(p => ({
+      products: products.map((p) => ({
         id: p.id,
         name: p.name,
         sellPrice: Number(p.sell_price),
@@ -77,14 +104,14 @@ export class DashboardService {
         margin: Number(p.margin_amount || 0),
         status: p.status,
       })),
-      ingredients: ingredients.map(i => ({
+      ingredients: ingredients.map((i) => ({
         id: i.id,
         name: i.name,
         unit: i.unit,
         quantity: Number(i.quantity),
         purchasePrice: Number(i.purchase_price),
       })),
-      stockBrief: stocks.map(s => ({
+      stockBrief: stocks.map((s) => ({
         id: s.id,
         ingredientId: s.ingredient ? s.ingredient.id : null,
         purchasedQuantity: Number(s.purchased_quantity),
@@ -92,7 +119,7 @@ export class DashboardService {
         unit: s.unit,
         totalPurchasedPrice: Number(s.total_purchased_price),
       })),
-      latestPurchases: latestPurchases.map(p => ({
+      latestPurchases: latestPurchases.map((p) => ({
         id: p.id,
         ingredientId: p.ingredient ? p.ingredient.id : null,
         quantity: p.quantity,

@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Purchase } from './entities/purchase.entity';
@@ -18,23 +22,39 @@ export class PurchasesService {
     private usersService: UsersService,
   ) {}
 
-  async create(createPurchaseDto: CreatePurchaseDto, userId: string): Promise<Purchase> {
+  async create(
+    createPurchaseDto: CreatePurchaseDto,
+    userId: string,
+  ): Promise<Purchase> {
     const user = await this.usersService.findById(userId);
     if (!user) throw new BadRequestException('User not found');
 
     const { ingredientId, quantity, unit, purchasePrice } = createPurchaseDto;
-    if (quantity <= 0 || purchasePrice < 0) throw new BadRequestException('Invalid quantity or price');
+    if (quantity <= 0 || purchasePrice < 0)
+      throw new BadRequestException('Invalid quantity or price');
 
-    const ingredient = await this.ingredientsService.findOne(ingredientId, userId);
-    if (!ingredient) throw new NotFoundException(`Ingredient ${ingredientId} not found`);
+    const ingredient = await this.ingredientsService.findOne(
+      ingredientId,
+      userId,
+    );
+    if (!ingredient)
+      throw new NotFoundException(`Ingredient ${ingredientId} not found`);
 
     // Convert quantity to ingredient's base unit for consistency
-    const normalizedQuantity = await this.stockService.convertQuantity(quantity, unit, ingredient.unit);
+    const normalizedQuantity = await this.stockService.convertQuantity(
+      quantity,
+      unit,
+      ingredient.unit,
+    );
     const totalPurchasedPrice = Number(purchasePrice.toFixed(2));
-    const purchasePricePerUnit = Number((totalPurchasedPrice / normalizedQuantity).toFixed(4)); // Per unit of base unit
+    const purchasePricePerUnit = Number(
+      (totalPurchasedPrice / normalizedQuantity).toFixed(4),
+    ); // Per unit of base unit
     const wastePercent = ingredient.waste_percent || 0;
-    const usablePercentage = 1 - (wastePercent / 100);
-    const remainingQuantity = Number((normalizedQuantity * usablePercentage).toFixed(2));
+    const usablePercentage = 1 - wastePercent / 100;
+    const remainingQuantity = Number(
+      (normalizedQuantity * usablePercentage).toFixed(2),
+    );
 
     const purchase = this.purchaseRepository.create({
       ingredient,
@@ -47,36 +67,68 @@ export class PurchasesService {
     const savedPurchase = await this.purchaseRepository.save(purchase);
 
     // Create or update stock
-    const existingStocks = await this.stockService.findAllByIngredientId(ingredientId, userId);
+    const existingStocks = await this.stockService.findAllByIngredientId(
+      ingredientId,
+      userId,
+    );
     let stockToUpdate: Stock | undefined;
     for (const stock of existingStocks) {
-      if (this.stockService.isCompatibleUnit(unit, stock.unit) && stock.remaining_quantity > 0) {
+      if (
+        this.stockService.isCompatibleUnit(unit, stock.unit) &&
+        stock.remaining_quantity > 0
+      ) {
         stockToUpdate = stock;
         break;
       }
     }
 
     if (stockToUpdate) {
-      const convertedQuantity = await this.stockService.convertQuantity(quantity, unit, stockToUpdate.unit);
-      const newRemaining = Number((Number(stockToUpdate.remaining_quantity) + (convertedQuantity * usablePercentage)).toFixed(2));
-      const totalPurchased = Number((Number(stockToUpdate.purchased_quantity) + convertedQuantity).toFixed(2));
+      const convertedQuantity = await this.stockService.convertQuantity(
+        quantity,
+        unit,
+        stockToUpdate.unit,
+      );
+      const newRemaining = Number(
+        (
+          Number(stockToUpdate.remaining_quantity) +
+          convertedQuantity * usablePercentage
+        ).toFixed(2),
+      );
+      const totalPurchased = Number(
+        (Number(stockToUpdate.purchased_quantity) + convertedQuantity).toFixed(
+          2,
+        ),
+      );
 
       // Recalculate weighted average in base unit
-      const existingTotalCost = Number(stockToUpdate.purchase_price_per_unit) * Number(stockToUpdate.purchased_quantity);
+      const existingTotalCost =
+        Number(stockToUpdate.purchase_price_per_unit) *
+        Number(stockToUpdate.purchased_quantity);
       const newTotalCost = totalPurchasedPrice;
-      const totalQuantity = Number(stockToUpdate.purchased_quantity) + normalizedQuantity;
-      const weightedPricePerUnit = Number(((existingTotalCost + newTotalCost) / totalQuantity).toFixed(4));
+      const totalQuantity =
+        Number(stockToUpdate.purchased_quantity) + normalizedQuantity;
+      const weightedPricePerUnit = Number(
+        ((existingTotalCost + newTotalCost) / totalQuantity).toFixed(4),
+      );
 
-      const newTotalPurchasedPrice = Number((Number(stockToUpdate.total_purchased_price || 0) + totalPurchasedPrice).toFixed(2));
+      const newTotalPurchasedPrice = Number(
+        (
+          Number(stockToUpdate.total_purchased_price || 0) + totalPurchasedPrice
+        ).toFixed(2),
+      );
 
-      await this.stockService.update(stockToUpdate.id, {
-        remaining_quantity: newRemaining,
-        purchased_quantity: totalPurchased,
-        purchase_price_per_unit: weightedPricePerUnit,
-        total_purchased_price: newTotalPurchasedPrice,
-        waste_percent: wastePercent,
-        updated_at: new Date(),
-      }, userId);
+      await this.stockService.update(
+        stockToUpdate.id,
+        {
+          remaining_quantity: newRemaining,
+          purchased_quantity: totalPurchased,
+          purchase_price_per_unit: weightedPricePerUnit,
+          total_purchased_price: newTotalPurchasedPrice,
+          waste_percent: wastePercent,
+          updated_at: new Date(),
+        },
+        userId,
+      );
     } else {
       await this.stockService.create({
         ingredient,
@@ -94,16 +146,21 @@ export class PurchasesService {
     return savedPurchase;
   }
 
-  async remove(id: string): Promise<void> {
-    const purchase = await this.purchaseRepository.findOneBy({ id });
+  async remove(id: string, userId: string): Promise<void> {
+    const purchase = await this.purchaseRepository.findOne({
+      where: { id, user: { id: userId } },
+    });
     if (!purchase) {
       throw new NotFoundException(`Purchase with ID ${id} not found`);
     }
     await this.purchaseRepository.remove(purchase);
   }
 
-  async findAll(): Promise<Purchase[]> {
-    return this.purchaseRepository.find({ relations: ['ingredient'] });
+  async findAll(userId: string): Promise<Purchase[]> {
+    return this.purchaseRepository.find({
+      where: { user: { id: userId } },
+      relations: ['ingredient'],
+    });
   }
 
   async findAllByUser(userId: string): Promise<Purchase[]> {

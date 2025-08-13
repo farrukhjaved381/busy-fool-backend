@@ -7,7 +7,10 @@ export class CreateIngredientDto {
   name: string;
 
   @IsString()
-  @ApiProperty({ description: 'Unit of measurement (e.g., kg, L, unit)', example: 'L' })
+  @ApiProperty({
+    description: 'Unit of measurement (e.g., kg, L, unit)',
+    example: 'L',
+  })
   unit: string;
 
   @IsNumber()
@@ -17,7 +20,10 @@ export class CreateIngredientDto {
 
   @IsNumber()
   @Min(0)
-  @ApiProperty({ description: 'Purchase price of the ingredient', example: 2.53 })
+  @ApiProperty({
+    description: 'Purchase price of the ingredient',
+    example: 2.53,
+  })
   purchase_price: number;
 
   @IsNumber()
@@ -29,13 +35,21 @@ export class CreateIngredientDto {
   @IsNumber()
   @IsOptional()
   @Min(0)
-  @ApiProperty({ description: 'Cost per milliliter', example: 0.00281, required: false })
+  @ApiProperty({
+    description: 'Cost per milliliter',
+    example: 0.00281,
+    required: false,
+  })
   cost_per_ml?: number;
 
   @IsNumber()
   @IsOptional()
   @Min(0)
-  @ApiProperty({ description: 'Cost per gram', example: 0.0157, required: false })
+  @ApiProperty({
+    description: 'Cost per gram',
+    example: 0.0157,
+    required: false,
+  })
   cost_per_gram?: number;
 
   @IsNumber()
@@ -46,6 +60,10 @@ export class CreateIngredientDto {
 
   @IsString()
   @IsOptional()
-  @ApiProperty({ description: 'Supplier name', example: 'Oatly', required: false })
+  @ApiProperty({
+    description: 'Supplier name',
+    example: 'Oatly',
+    required: false,
+  })
   supplier?: string;
 }

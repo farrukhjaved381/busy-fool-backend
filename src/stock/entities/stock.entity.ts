@@ -1,17 +1,31 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, CreateDateColumn, OneToMany } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  ManyToOne,
+  JoinColumn,
+  CreateDateColumn,
+  OneToMany,
+} from 'typeorm';
 import { Ingredient } from '../../ingredients/entities/ingredient.entity';
 import { Waste } from '../../waste/entities/waste.entity';
+import { User } from '../../users/user.entity';
 
 @Entity()
 export class Stock {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @ManyToOne(() => Ingredient, ingredient => ingredient.stocks)
+  @ManyToOne(() => User, (user) => user.stocks, { onDelete: 'CASCADE' })
+  user: User;
+
+  @ManyToOne(() => Ingredient, (ingredient) => ingredient.stocks, {
+    onDelete: 'CASCADE',
+  })
   @JoinColumn()
   ingredient: Ingredient;
 
-  @OneToMany(() => Waste, waste => waste.stock)
+  @OneToMany(() => Waste, (waste) => waste.stock)
   wastes: Waste[];
 
   @Column({ type: 'decimal', precision: 10, scale: 2, nullable: false })
@@ -32,7 +46,13 @@ export class Stock {
   @Column({ type: 'decimal', precision: 10, scale: 2, nullable: false })
   remaining_quantity: number;
 
-  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: false, default: 0 })
+  @Column({
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    nullable: false,
+    default: 0,
+  })
   wasted_quantity: number;
 
   @CreateDateColumn()

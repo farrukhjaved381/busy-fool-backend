@@ -1,4 +1,10 @@
-import { Column, Entity, PrimaryGeneratedColumn, ManyToOne, CreateDateColumn } from 'typeorm';
+import {
+  Column,
+  Entity,
+  PrimaryGeneratedColumn,
+  ManyToOne,
+  CreateDateColumn,
+} from 'typeorm';
 import { ApiProperty } from '@nestjs/swagger';
 import { Ingredient } from '../../ingredients/entities/ingredient.entity';
 import { User } from '../../users/user.entity';
@@ -9,12 +15,11 @@ export class Purchase {
   @ApiProperty({ description: 'Unique identifier for the purchase' })
   id: string;
 
-  @ManyToOne(() => Ingredient, { eager: true })
+  @ManyToOne(() => Ingredient, { eager: true, onDelete: 'CASCADE' })
   @ApiProperty({ description: 'Ingredient purchased' })
   ingredient: Ingredient;
 
-  @ManyToOne(() => User)
-  @ApiProperty({ description: 'User who recorded the purchase' })
+  @ManyToOne(() => User, (user) => user.purchases, { onDelete: 'CASCADE' })
   user: User;
 
   @Column('decimal', { precision: 10, scale: 2 })

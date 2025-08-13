@@ -1,7 +1,20 @@
-import { Controller, Post, Body, Get, UseGuards, Request } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  Get,
+  UseGuards,
+  Request,
+} from '@nestjs/common';
 import { WasteService } from './waste.service';
 import { CreateWasteDto } from './dto/create-waste.dto';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiBody,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -22,7 +35,10 @@ export class WasteController {
   @ApiBody({ type: CreateWasteDto })
   @ApiResponse({ status: 201, description: 'Waste recorded successfully.' })
   @ApiResponse({ status: 404, description: 'Stock not found.' })
-  @ApiResponse({ status: 400, description: 'Invalid input or insufficient stock.' })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid input or insufficient stock.',
+  })
   async create(@Body() createWasteDto: CreateWasteDto, @Request() req: any) {
     return this.wasteService.create(createWasteDto);
   }

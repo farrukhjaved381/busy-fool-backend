@@ -1,5 +1,8 @@
-
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Stock } from './entities/stock.entity';
@@ -29,11 +32,15 @@ export class StockService {
       where: { id, ingredient: { user: { id: userId } } },
       relations: ['ingredient'],
     });
-    if (!stock) throw new NotFoundException(`Stock batch ${id} not found for this user`);
+    if (!stock)
+      throw new NotFoundException(`Stock batch ${id} not found for this user`);
     return stock;
   }
 
-  async findAllByIngredientId(ingredientId: string, userId: string): Promise<Stock[]> {
+  async findAllByIngredientId(
+    ingredientId: string,
+    userId: string,
+  ): Promise<Stock[]> {
     return this.stockRepository.find({
       where: { ingredient: { id: ingredientId, user: { id: userId } } },
       relations: ['ingredient'],
@@ -41,35 +48,58 @@ export class StockService {
     });
   }
 
-  async convertQuantity(quantity: number, fromUnit: string, toUnit: string): Promise<number> {
+  async convertQuantity(
+    quantity: number,
+    fromUnit: string,
+    toUnit: string,
+  ): Promise<number> {
     const fromLower = fromUnit.toLowerCase().replace(/s$/, '');
     const toLower = toUnit.toLowerCase().replace(/s$/, '');
 
     if (fromLower === toLower) return Number(quantity.toFixed(2));
 
-    const conversionFactors: { [key: string]: number } = { ml: 1, l: 1000, g: 1, kg: 1000 };
+    const conversionFactors: { [key: string]: number } = {
+      ml: 1,
+      l: 1000,
+      g: 1,
+      kg: 1000,
+    };
     const fromFactor = conversionFactors[fromLower] || 1;
     const toFactor = conversionFactors[toLower] || 1;
 
-    if (fromLower === 'unit' && toLower === 'unit') return Number(quantity.toFixed(2));
+    if (fromLower === 'unit' && toLower === 'unit')
+      return Number(quantity.toFixed(2));
     if (fromFactor && toFactor) {
       const converted = (quantity * fromFactor) / toFactor;
       return Number(converted.toFixed(2));
     }
-    throw new BadRequestException(`Incompatible units: ${fromUnit} and ${toUnit}`);
+    throw new BadRequestException(
+      `Incompatible units: ${fromUnit} and ${toUnit}`,
+    );
   }
 
-  async getAvailableStock(ingredientId: string, userId: string): Promise<number> {
+  async getAvailableStock(
+    ingredientId: string,
+    userId: string,
+  ): Promise<number> {
     const stocks = await this.findAllByIngredientId(ingredientId, userId);
-    return stocks.reduce((sum, stock) => sum + (Number(stock.remaining_quantity) || 0), 0);
+    return stocks.reduce(
+      (sum, stock) => sum + (Number(stock.remaining_quantity) || 0),
+      0,
+    );
   }
 
   isCompatibleUnit(unit1: string, unit2: string): boolean {
     const u1 = unit1.toLowerCase().replace(/s$/, '');
     const u2 = unit2.toLowerCase().replace(/s$/, '');
-    return u1 === u2 || (u1 === 'l' && u2 === 'ml') || (u1 === 'ml' && u2 === 'l') ||
-           (u1 === 'kg' && u2 === 'g') || (u1 === 'g' && u2 === 'kg') ||
-           (u1 === 'unit' && u2 === 'unit');
+    return (
+      u1 === u2 ||
+      (u1 === 'l' && u2 === 'ml') ||
+      (u1 === 'ml' && u2 === 'l') ||
+      (u1 === 'kg' && u2 === 'g') ||
+      (u1 === 'g' && u2 === 'kg') ||
+      (u1 === 'unit' && u2 === 'unit')
+    );
   }
 
   async remove(id: string, userId: string): Promise<void> {
@@ -77,7 +107,11 @@ export class StockService {
     await this.stockRepository.remove(stock);
   }
 
-  async update(id: string, updateData: Partial<Stock>, userId: string): Promise<Stock> {
+  async update(
+    id: string,
+    updateData: Partial<Stock>,
+    userId: string,
+  ): Promise<Stock> {
     const stock = await this.findOne(id, userId);
     Object.assign(stock, updateData);
     return this.stockRepository.save(stock);

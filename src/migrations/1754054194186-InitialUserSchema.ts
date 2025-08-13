@@ -1,14 +1,17 @@
-
-import { MigrationInterface, QueryRunner } from "typeorm";
+import { MigrationInterface, QueryRunner } from 'typeorm';
 
 export class InitialUserSchema1754054194186 implements MigrationInterface {
-    name = 'InitialUserSchema1754054194186'
+  name = 'InitialUserSchema1754054194186';
 
-    public async up(queryRunner: QueryRunner): Promise<void> {
-        await queryRunner.query(`DROP TABLE IF EXISTS "user" CASCADE`);
-        await queryRunner.query(`DROP TYPE IF EXISTS "public"."user_role_enum" CASCADE`);
-        await queryRunner.query(`CREATE TYPE "public"."user_role_enum" AS ENUM('owner', 'staff')`);
-        await queryRunner.query(`
+  public async up(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`DROP TABLE IF EXISTS "user" CASCADE`);
+    await queryRunner.query(
+      `DROP TYPE IF EXISTS "public"."user_role_enum" CASCADE`,
+    );
+    await queryRunner.query(
+      `CREATE TYPE "public"."user_role_enum" AS ENUM('owner', 'staff')`,
+    );
+    await queryRunner.query(`
             CREATE TABLE "user" (
                 "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
                 "name" character varying,
@@ -26,10 +29,10 @@ export class InitialUserSchema1754054194186 implements MigrationInterface {
                 CONSTRAINT "PK_cace4a159ff9f2512dd42373760" PRIMARY KEY ("id")
             )
         `);
-    }
+  }
 
-    public async down(queryRunner: QueryRunner): Promise<void> {
-        await queryRunner.query(`DROP TABLE "user"`);
-        await queryRunner.query(`DROP TYPE "public"."user_role_enum"`);
-    }
+  public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`DROP TABLE "user"`);
+    await queryRunner.query(`DROP TYPE "public"."user_role_enum"`);
+  }
 }

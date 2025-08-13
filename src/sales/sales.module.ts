@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { SalesService } from './sales.service';
 import { SalesController } from './sales.controller';
@@ -18,8 +18,16 @@ import { ImportSalesUnmatched } from './entities/import-sales.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Sale, Ingredient, ProductIngredient, Purchase, Waste, ImportSalesUnmatched, CsvMappings]),
-    ProductsModule,
+    TypeOrmModule.forFeature([
+      Sale,
+      Ingredient,
+      ProductIngredient,
+      Purchase,
+      Waste,
+      ImportSalesUnmatched,
+      CsvMappings,
+    ]),
+    forwardRef(() => ProductsModule),
     UsersModule,
     StockModule,
     WasteModule, // Add this to import WasteRepository

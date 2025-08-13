@@ -4,7 +4,10 @@ import { Transform } from 'class-transformer';
 
 export class ImportSalesDto {
   @IsString()
-  @ApiProperty({ example: '6b3db133-0d67-4d01-967a-4816e5c4fd77', description: 'User ID' })
+  @ApiProperty({
+    example: '6b3db133-0d67-4d01-967a-4816e5c4fd77',
+    description: 'User ID',
+  })
   userId: string;
 
   @IsBoolean()
@@ -14,6 +17,9 @@ export class ImportSalesDto {
     if (value === 'false') return false;
     return false;
   })
-  @ApiProperty({ example: false, description: 'If false, runs preview without saving' })
+  @ApiProperty({
+    example: false,
+    description: 'If false, runs preview without saving',
+  })
   confirm: boolean;
 }
