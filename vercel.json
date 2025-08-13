@@ -1,22 +1,32 @@
 {
-    "version": 2,
-    "builds": [
-      {
-        "src": "dist/main.ts",
-        "use": "@vercel/node"
-      }
-    ],
-    "routes": [
-      {
-        "src": "/(.*)",
-        "dest": "dist/main.ts"
-      }
-    ],
-    "env": {
-      "NODE_ENV": "production",
-      "JWT_SECRET": "@jwt_secret",
-      "JWT_EXPIRES_IN": "@jwt_expires_in",
-      "DATABASE_URL": "@database_url"
+  "version": 2,
+  "builds": [
+    {
+      "src": "dist/main.js",
+      "use": "@vercel/node"
     }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "dist/main.js"
+    }
+  ],
+  "env": {
+    "NODE_ENV": "production",
+    "JWT_SECRET": "@JWT_SECRET",
+    "JWT_EXPIRES_IN": "@JWT_EXPIRES_IN",
+    "DB_HOST": "@DB_HOST",
+    "DB_PORT": "@DB_PORT",
+    "DB_USER": "@DB_USER",
+    "DB_PASSWORD": "@DB_PASSWORD",
+    "DB_NAME": "@DB_NAME",
+    "DB_SSL": "@DB_SSL",
+    "EMAIL_USER": "@EMAIL_USER",
+    "EMAIL_PASS": "@EMAIL_PASS",
+    "EMAIL_HOST": "@EMAIL_HOST",
+    "EMAIL_PORT": "@EMAIL_PORT",
+    "EMAIL_SECURE": "@EMAIL_SECURE",
+    "FRONTEND_URL": "@FRONTEND_URL"
   }
-  
+}
