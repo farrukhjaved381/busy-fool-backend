@@ -76,6 +76,7 @@ async function bootstrap() {
   }
   app.useStaticAssets(uploadDir, { prefix: '/uploads' });
 
+  // Serve the Swagger UI
   // Serve the static swagger.html file
   app.useStaticAssets(path.join(__dirname, '..', 'public'));
 
