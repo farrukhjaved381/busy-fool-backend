@@ -34,9 +34,6 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { Request as ExpressRequest } from 'express';
 
-const uploadDir = './uploads/';
-fs.mkdirSync(uploadDir, { recursive: true });
-
 @ApiTags('ingredients')
 @Controller('ingredients')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -86,7 +83,9 @@ export class IngredientsController {
     FileInterceptor('file', {
       storage: multer.diskStorage({
         destination: (req, file, cb) => {
-          cb(null, './uploads/');
+          const uploadPath = '/tmp/';
+          fs.mkdirSync(uploadPath, { recursive: true });
+          cb(null, uploadPath);
         },
         filename: (req, file, cb) => {
           cb(null, `${Date.now()}-${file.originalname}`);

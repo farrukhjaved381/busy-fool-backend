@@ -24,12 +24,6 @@ import { diskStorage } from 'multer';
 import * as path from 'path';
 import * as fs from 'fs';
 
-const tempDir = './uploads/temp';
-const csvDir = './uploads/csv';
-
-fs.mkdirSync(tempDir, { recursive: true });
-fs.mkdirSync(csvDir, { recursive: true });
-
 @ApiTags('CSV Mappings')
 @Controller('csv-mappings')
 export class CsvMappingsController {
@@ -64,7 +58,11 @@ export class CsvMappingsController {
   @UseInterceptors(
     FileInterceptor('file', {
       storage: diskStorage({
-        destination: './uploads/temp',
+        destination: (req, file, cb) => {
+          const uploadPath = '/tmp/temp';
+          fs.mkdirSync(uploadPath, { recursive: true });
+          cb(null, uploadPath);
+        },
         filename: (req, file, cb) =>
           cb(null, `${Date.now()}-${file.originalname}`),
       }),
@@ -137,7 +135,11 @@ export class CsvMappingsController {
   @UseInterceptors(
     FileInterceptor('file', {
       storage: diskStorage({
-        destination: './uploads/csv',
+        destination: (req, file, cb) => {
+          const uploadPath = '/tmp/csv';
+          fs.mkdirSync(uploadPath, { recursive: true });
+          cb(null, uploadPath);
+        },
         filename: (req, file, cb) =>
           cb(null, `${Date.now()}-${file.originalname}`),
       }),
@@ -193,7 +195,11 @@ export class CsvMappingsController {
   @UseInterceptors(
     FileInterceptor('file', {
       storage: diskStorage({
-        destination: './uploads/csv',
+        destination: (req, file, cb) => {
+          const uploadPath = '/tmp/csv';
+          fs.mkdirSync(uploadPath, { recursive: true });
+          cb(null, uploadPath);
+        },
         filename: (req, file, cb) =>
           cb(null, `${Date.now()}-${file.originalname}`),
       }),

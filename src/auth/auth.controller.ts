@@ -29,6 +29,7 @@ import { JwtAuthGuard } from './jwt-auth.guard';
 import { User } from '../users/user.entity';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
+import * as fs from 'fs';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -166,7 +167,11 @@ export class AuthController {
   @UseInterceptors(
     FileInterceptor('profilePicture', {
       storage: diskStorage({
-        destination: './uploads',
+        destination: (req, file, cb) => {
+          const uploadPath = '/tmp/uploads';
+          fs.mkdirSync(uploadPath, { recursive: true });
+          cb(null, uploadPath);
+        },
         filename: (req, file, cb) => {
           const randomName = Array(32)
             .fill(null)
