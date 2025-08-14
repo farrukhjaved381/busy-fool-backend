@@ -374,6 +374,11 @@ export class CsvMappingsService {
           sale_date: saleDate,
         } as any);
         await this.saleRepository.save(sale);
+
+        // Manually update quantity_sold for the product
+        productRecord.quantity_sold =
+          Number(productRecord.quantity_sold) + Number(quantitySold);
+        await this.productRepository.save(productRecord);
       }
 
       insights.totalSales += amount;
@@ -509,6 +514,11 @@ export class CsvMappingsService {
           sale_date: saleDate,
         } as any);
         await this.saleRepository.save(sale);
+
+        // Manually update quantity_sold for the product
+        productRecord.quantity_sold =
+          Number(productRecord.quantity_sold) + Number(quantitySold);
+        await this.productRepository.save(productRecord);
       }
 
       insights.totalSales += amount;

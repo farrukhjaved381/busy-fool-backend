@@ -232,12 +232,16 @@ export class SalesService {
 
         await transactionalEntityManager.save(sale);
 
-        // Increment quantity_sold for the product
-        await this.productRepository.increment(
-          { id: product.id, user: { id: userId } },
-          'quantity_sold',
-          createSaleDto.quantity,
-        );
+        // Manually update quantity_sold for the product
+        const productToUpdate = await transactionalEntityManager.findOne(Product, {
+          where: { id: product.id },
+        });
+        if (productToUpdate) {
+          productToUpdate.quantity_sold =
+            Number(productToUpdate.quantity_sold) +
+            Number(createSaleDto.quantity);
+          await transactionalEntityManager.save(productToUpdate);
+        }
 
         return sale;
       },
@@ -267,6 +271,7 @@ export class SalesService {
   async remove(id: string, userId: string): Promise<void> {
     const sale = await this.salesRepository.findOne({
       where: { id, user: { id: userId } },
+      relations: ['product'],
     });
     if (!sale) {
       throw new NotFoundException(`Sale with ID ${id} not found for this user`);
@@ -274,11 +279,14 @@ export class SalesService {
 
     // Decrement quantity_sold for the product
     if (sale.product) {
-      await this.productRepository.decrement(
-        { id: sale.product.id, user: { id: userId } },
-        'quantity_sold',
-        sale.quantity,
-      );
+      const product = await this.productRepository.findOne({
+        where: { id: sale.product.id },
+      });
+      if (product) {
+        product.quantity_sold =
+          Number(product.quantity_sold) - Number(sale.quantity);
+        await this.productRepository.save(product);
+      }
     }
 
     await this.salesRepository.remove(sale);
@@ -307,14 +315,21 @@ export class SalesService {
     // Update quantity_sold for the product
     if (existingSale.product && newQuantity !== oldQuantity) {
       const quantityDifference = newQuantity - oldQuantity;
-      await this.productRepository.increment(
-        { id: existingSale.product.id, user: { id: userId } },
-        'quantity_sold',
-        quantityDifference,
-      );
+      const product = await this.productRepository.findOne({
+        where: { id: existingSale.product.id },
+      });
+      if (product) {
+        product.quantity_sold =
+          Number(product.quantity_sold) + quantityDifference;
+        await this.productRepository.save(product);
+      }
     }
 
     Object.assign(existingSale, updateSaleDto);
+    if (updateSaleDto.quantity && existingSale.product) {
+      existingSale.total_amount =
+        existingSale.product.sell_price * newQuantity;
+    }
     return this.salesRepository.save(existingSale);
   }
 
