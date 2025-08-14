@@ -31,7 +31,11 @@ import { UserRole } from '../users/user.entity';
 import { FileInterceptor } from '@nestjs/platform-express';
 import * as multer from 'multer';
 import * as path from 'path';
+import * as fs from 'fs';
 import { Request as ExpressRequest } from 'express';
+
+const uploadDir = './uploads/';
+fs.mkdirSync(uploadDir, { recursive: true });
 
 @ApiTags('ingredients')
 @Controller('ingredients')
@@ -82,8 +86,7 @@ export class IngredientsController {
     FileInterceptor('file', {
       storage: multer.diskStorage({
         destination: (req, file, cb) => {
-          const uploadDir = path.join(__dirname, '..', '..', 'uploads');
-          cb(null, uploadDir);
+          cb(null, './uploads/');
         },
         filename: (req, file, cb) => {
           cb(null, `${Date.now()}-${file.originalname}`);

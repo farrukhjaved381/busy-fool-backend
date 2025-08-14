@@ -22,6 +22,13 @@ import {
 } from '@nestjs/swagger';
 import { diskStorage } from 'multer';
 import * as path from 'path';
+import * as fs from 'fs';
+
+const tempDir = './uploads/temp';
+const csvDir = './uploads/csv';
+
+fs.mkdirSync(tempDir, { recursive: true });
+fs.mkdirSync(csvDir, { recursive: true });
 
 @ApiTags('CSV Mappings')
 @Controller('csv-mappings')
