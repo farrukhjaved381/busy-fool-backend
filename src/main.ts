@@ -76,8 +76,8 @@ async function bootstrap() {
   }
   app.useStaticAssets(uploadDir, { prefix: '/uploads' });
 
-  // Serve the Swagger UI
-  SwaggerModule.setup('api', app, document);
+  // Serve the static swagger.html file
+  app.useStaticAssets(path.join(__dirname, '..', 'public'));
 
   // Enable CORS
   app.enableCors();
