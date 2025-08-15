@@ -122,7 +122,7 @@ export class AuthService {
     await this.usersRepository.save(user);
 
     const frontendUrl =
-      this.configService.get<string>('FRONTEND_URL') || 'http://localhost:5173';
+      this.configService.get<string>('FRONTEND_URL');
     const resetLink = `${frontendUrl}/reset-password?token=${token}`;
     await this.mailService.sendMail(
       user.email,
