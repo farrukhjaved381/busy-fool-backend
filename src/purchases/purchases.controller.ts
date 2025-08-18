@@ -4,7 +4,7 @@ import {
   Body,
   Get,
   UseGuards,
-  Request,
+  Req,
   HttpCode,
   HttpStatus,
   Delete,
@@ -24,8 +24,8 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { UserRole } from '../users/user.entity';
+import { RequestWithUser } from '../auth/interfaces/request-with-user.interface';
 
-@ApiTags('purchases')
 @ApiTags('purchases')
 @Controller('purchases')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -81,7 +81,7 @@ export class PurchasesController {
   @HttpCode(HttpStatus.CREATED)
   async create(
     @Body() createPurchaseDto: CreatePurchaseDto,
-    @Request() req: any,
+    @Req() req: RequestWithUser,
   ) {
     return this.purchasesService.create(createPurchaseDto, req.user.sub);
   }
@@ -91,7 +91,7 @@ export class PurchasesController {
   @ApiOperation({ summary: 'Delete a purchase by ID' })
   @ApiResponse({ status: 200, description: 'Purchase deleted.' })
   @ApiResponse({ status: 404, description: 'Purchase not found.' })
-  async remove(@Param('id') id: string, @Request() req: any) {
+  async remove(@Param('id') id: string, @Req() req: RequestWithUser) {
     return this.purchasesService.remove(id, req.user.sub);
   }
 
@@ -142,7 +142,7 @@ export class PurchasesController {
     status: HttpStatus.FORBIDDEN,
     description: 'Forbidden (non-owner role)',
   })
-  async findAll(@Request() req: any) {
+  async findAll(@Req() req: RequestWithUser) {
     return this.purchasesService.findAll(req.user.sub);
   }
 }

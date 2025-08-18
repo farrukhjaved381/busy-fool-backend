@@ -10,6 +10,7 @@ import {
   HttpStatus,
   UseInterceptors,
   UploadedFile,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AuthService } from './auth.service';
@@ -23,12 +24,13 @@ import {
   ApiResponse,
   ApiBearerAuth,
   ApiBody,
-  ApiConsumes,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from './jwt-auth.guard';
+import { LogoutGuard } from './logout.guard';
 import { User } from '../users/user.entity';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
+import { RequestWithUser } from './interfaces/request-with-user.interface';
 import * as fs from 'fs';
 
 @ApiTags('auth')
@@ -102,7 +104,7 @@ export class AuthController {
     description: 'Unauthorized (missing or invalid JWT)',
   })
   @ApiResponse({ status: 404, description: 'User not found' })
-  getProfile(@Request() req: any) {
+  getProfile(@Request() req: RequestWithUser) {
     return this.authService.getProfile(req.user.sub);
   }
 
@@ -158,7 +160,7 @@ export class AuthController {
       required: [],
     },
   })
-  updateProfile(@Request() req: any, @Body() updateUserDto: UpdateUserDto) {
+  updateProfile(@Request() req: RequestWithUser, @Body() updateUserDto: UpdateUserDto) {
     return this.authService.updateProfile(req.user.sub, updateUserDto);
   }
 
@@ -183,23 +185,30 @@ export class AuthController {
     }),
   )
   uploadProfilePicture(
-    @Request() req: any,
+    @Request() req: RequestWithUser,
     @UploadedFile() file: Express.Multer.File,
   ) {
     return this.authService.uploadProfilePicture(req.user.sub, file);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(LogoutGuard)
   @Post('logout')
   @ApiBearerAuth('JWT')
   @ApiOperation({ summary: 'Logout a user' })
-  @ApiResponse({ status: 200, description: 'User logged out successfully' })
+  @ApiResponse({
+    status: 200,
+    description: 'User logged out successfully',
+    schema: { type: 'object', properties: { message: { type: 'string' } } },
+  })
   @ApiResponse({
     status: 401,
     description: 'Unauthorized (missing or invalid JWT)',
   })
   @HttpCode(HttpStatus.OK)
-  logout(@Request() req: any) {
+  async logout(@Request() req: RequestWithUser): Promise<{ message: string }> {
+    if (!req.user) {
+      throw new UnauthorizedException('Invalid or expired token');
+    }
     return this.authService.logout(req.user.sub);
   }
 

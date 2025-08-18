@@ -9,7 +9,7 @@ import { Repository, MoreThan } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
-import { User, UserRole } from '../users/user.entity';
+import { User } from '../users/user.entity';
 import { CreateUserDto } from '../users/dto/create-user.dto';
 import { UpdateUserDto } from '../users/dto/update-user.dto';
 import { LoginDto } from './dto/login.dto';
@@ -106,8 +106,16 @@ export class AuthService {
     return this.usersRepository.save(user);
   }
 
-  async logout(userId: string): Promise<void> {
-    return; // Placeholder; implement token blacklisting if needed
+  async logout(userId: string): Promise<{ message: string }> {
+    const user = await this.usersRepository.findOneBy({ id: userId });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    user.tokenBlacklistedAt = new Date();
+    await this.usersRepository.save(user);
+
+    return { message: 'Logged out successfully' };
   }
 
   async forgotPassword(email: string): Promise<void> {
@@ -121,8 +129,7 @@ export class AuthService {
     user.resetPasswordExpires = new Date(Date.now() + 3600000); // 1 hour expiration
     await this.usersRepository.save(user);
 
-    const frontendUrl =
-      this.configService.get<string>('FRONTEND_URL');
+    const frontendUrl = this.configService.get<string>('FRONTEND_URL');
     const resetLink = `${frontendUrl}/reset-password?token=${token}`;
     await this.mailService.sendMail(
       user.email,

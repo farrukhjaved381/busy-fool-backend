@@ -31,7 +31,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { UserRole } from '../users/user.entity';
-import { Request as ExpressRequest } from 'express';
+import { RequestWithUser } from '../auth/interfaces/request-with-user.interface';
 
 @ApiTags('products')
 @Controller('products')
@@ -67,9 +67,9 @@ export class ProductsController {
   @HttpCode(HttpStatus.CREATED)
   async create(
     @Body() createProductDto: CreateProductDto,
-    @Req() req: ExpressRequest,
+    @Req() req: RequestWithUser,
   ): Promise<Product> {
-    return this.productsService.create(createProductDto, (req as any).user.sub);
+    return this.productsService.create(createProductDto, req.user.sub);
   }
 
   @Get()
@@ -94,8 +94,8 @@ export class ProductsController {
     status: HttpStatus.FORBIDDEN,
     description: 'Forbidden (non-owner role)',
   })
-  async findAll(@Req() req: ExpressRequest): Promise<Product[]> {
-    return this.productsService.findAll((req as any).user.sub);
+  async findAll(@Req() req: RequestWithUser): Promise<Product[]> {
+    return this.productsService.findAll(req.user.sub);
   }
 
   @Get(':id')
@@ -122,9 +122,9 @@ export class ProductsController {
   })
   async findOne(
     @Param('id') id: string,
-    @Req() req: ExpressRequest,
+    @Req() req: RequestWithUser,
   ): Promise<Product> {
-    return this.productsService.findOne(id, (req as any).user.sub);
+    return this.productsService.findOne(id, req.user.sub);
   }
 
   @Patch(':id')
@@ -158,12 +158,12 @@ export class ProductsController {
   async update(
     @Param('id') id: string,
     @Body() updateProductDto: UpdateProductDto,
-    @Req() req: ExpressRequest,
+    @Req() req: RequestWithUser,
   ): Promise<Product> {
     return this.productsService.update(
       id,
       updateProductDto,
-      (req as any).user.sub,
+      req.user.sub,
     );
   }
 
@@ -192,9 +192,9 @@ export class ProductsController {
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(
     @Param('id') id: string,
-    @Req() req: ExpressRequest,
+    @Req() req: RequestWithUser,
   ): Promise<void> {
-    return this.productsService.remove(id, (req as any).user.sub);
+    return this.productsService.remove(id, req.user.sub);
   }
 
   @Post('what-if')
@@ -227,9 +227,9 @@ export class ProductsController {
   })
   async whatIf(
     @Body() whatIfDto: WhatIfDto,
-    @Req() req: ExpressRequest,
+    @Req() req: RequestWithUser,
   ): Promise<{ productId: string; newMargin: number; newStatus: string }[]> {
-    return this.productsService.whatIf(whatIfDto, (req as any).user.sub);
+    return this.productsService.whatIf(whatIfDto, req.user.sub);
   }
 
   @Post('milk-swap')
@@ -260,13 +260,13 @@ export class ProductsController {
   })
   async milkSwap(
     @Body() milkSwapDto: MilkSwapDto,
-    @Req() req: ExpressRequest,
+    @Req() req: RequestWithUser,
   ): Promise<{
     originalMargin: number;
     newMargin: number;
     upchargeCovered: boolean;
   }> {
-    return this.productsService.milkSwap(milkSwapDto, (req as any).user.sub);
+    return this.productsService.milkSwap(milkSwapDto, req.user.sub);
   }
 
   @Post('max-producible')
@@ -289,11 +289,11 @@ export class ProductsController {
   })
   async getMaxProducibleQuantity(
     @Body('productId') productId: string,
-    @Req() req: ExpressRequest,
+    @Req() req: RequestWithUser,
   ): Promise<GetMaxProducibleQuantityResponseDto> {
     return this.productsService.getMaxProducibleQuantity(
       productId,
-      (req as any).user.sub,
+      req.user.sub,
     );
   }
 
@@ -328,16 +328,12 @@ export class ProductsController {
   async quickAction(
     @Param('id') id: string,
     @Body() quickActionDto: QuickActionDto,
-    @Req() req: ExpressRequest,
+    @Req() req: RequestWithUser,
   ): Promise<Product> {
     if (quickActionDto.new_sell_price <= 0) {
       throw new BadRequestException('New sell price must be positive');
     }
-    return this.productsService.quickAction(
-      id,
-      quickActionDto,
-      (req as any).user.sub,
-    );
+    return this.productsService.quickAction(id, quickActionDto, req.user.sub);
   }
 
   @Post('recalculate-quantities')

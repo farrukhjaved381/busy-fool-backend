@@ -115,6 +115,10 @@ export class User {
   @Column({ type: 'timestamp', nullable: true })
   resetPasswordExpires: Date | null;
 
+  @Column({ type: 'timestamp', nullable: true })
+  @ApiHideProperty()
+  tokenBlacklistedAt: Date | null;
+
   @BeforeInsert()
   async hashPassword() {
     this.password = await bcrypt.hash(this.password, 10);

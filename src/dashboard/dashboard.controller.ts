@@ -2,7 +2,8 @@ import { Controller, Get, UseGuards, Request } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { DashboardService } from './dashboard.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { Request as ExpressRequest } from 'express';
+import { RequestWithUser } from '../auth/interfaces/request-with-user.interface';
+
 
 @ApiTags('dashboard')
 @ApiBearerAuth()
@@ -13,7 +14,7 @@ export class DashboardController {
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Get dashboard data for the logged-in user' })
   @Get()
-  getDashboardData(@Request() req: ExpressRequest) {
-    return this.dashboardService.getDashboardData((req as any).user.sub); // pass userId
+  getDashboardData(@Request() req: RequestWithUser) {
+    return this.dashboardService.getDashboardData(req.user.sub); // pass userId
   }
 }

@@ -48,11 +48,7 @@ export class StockService {
     });
   }
 
-  async convertQuantity(
-    quantity: number,
-    fromUnit: string,
-    toUnit: string,
-  ): Promise<number> {
+  convertQuantity(quantity: number, fromUnit: string, toUnit: string): number {
     const fromLower = fromUnit.toLowerCase().replace(/s$/, '');
     const toLower = toUnit.toLowerCase().replace(/s$/, '');
 

@@ -39,7 +39,7 @@ export class WasteController {
     status: 400,
     description: 'Invalid input or insufficient stock.',
   })
-  async create(@Body() createWasteDto: CreateWasteDto, @Request() req: any) {
+  async create(@Body() createWasteDto: CreateWasteDto) {
     return this.wasteService.create(createWasteDto);
   }
 

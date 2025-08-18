@@ -3,7 +3,7 @@ import {
   Get,
   Param,
   UseGuards,
-  Request,
+  Req,
   Delete,
 } from '@nestjs/common';
 import { StockService } from './stock.service';
@@ -17,7 +17,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { UserRole } from '../users/user.entity';
-import { Request as ExpressRequest } from 'express';
+import { RequestWithUser } from '../auth/interfaces/request-with-user.interface';
 
 @ApiTags('stock')
 @Controller('stock')
@@ -30,8 +30,8 @@ export class StockController {
   @Roles(UserRole.OWNER)
   @ApiOperation({ summary: 'Get all stock batches' })
   @ApiResponse({ status: 200, description: 'List of stock batches retrieved.' })
-  async findAll(@Request() req: ExpressRequest) {
-    return this.stockService.findAll((req as any).user.sub);
+  async findAll(@Req() req: RequestWithUser) {
+    return this.stockService.findAll(req.user.sub);
   }
 
   @Get(':id')
@@ -39,8 +39,8 @@ export class StockController {
   @ApiOperation({ summary: 'Get a stock batch by ID' })
   @ApiResponse({ status: 200, description: 'Stock batch retrieved.' })
   @ApiResponse({ status: 404, description: 'Stock batch not found.' })
-  async findOne(@Param('id') id: string, @Request() req: ExpressRequest) {
-    return this.stockService.findOne(id, (req as any).user.sub);
+  async findOne(@Param('id') id: string, @Req() req: RequestWithUser) {
+    return this.stockService.findOne(id, req.user.sub);
   }
 
   @Delete(':id')
@@ -48,8 +48,8 @@ export class StockController {
   @ApiOperation({ summary: 'Delete a stock batch by ID' })
   @ApiResponse({ status: 200, description: 'Stock batch deleted.' })
   @ApiResponse({ status: 404, description: 'Stock batch not found.' })
-  async remove(@Param('id') id: string, @Request() req: ExpressRequest) {
-    return this.stockService.remove(id, (req as any).user.sub);
+  async remove(@Param('id') id: string, @Req() req: RequestWithUser) {
+    return this.stockService.remove(id, req.user.sub);
   }
 
   @Get('ingredient/:ingredientId')
@@ -65,11 +65,8 @@ export class StockController {
   })
   async findAllByIngredientId(
     @Param('ingredientId') ingredientId: string,
-    @Request() req: ExpressRequest,
+    @Req() req: RequestWithUser,
   ) {
-    return this.stockService.findAllByIngredientId(
-      ingredientId,
-      (req as any).user.sub,
-    );
+    return this.stockService.findAllByIngredientId(ingredientId, req.user.sub);
   }
 }

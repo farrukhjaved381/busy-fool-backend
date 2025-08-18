@@ -1,4 +1,4 @@
-import { IsString, IsNumber, Min, Max, Length } from 'class-validator';
+import { IsString, IsNumber, Min, Length } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateWasteDto {

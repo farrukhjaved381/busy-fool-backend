@@ -24,13 +24,27 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     console.log('JWT Strategy initialized with secret:', jwtSecret); // Debug log
   }
 
-  async validate(payload: { sub: string; email: string; role: string }) {
+  async validate(payload: {
+    sub: string;
+    email: string;
+    role: string;
+    iat: number;
+  }) {
     console.log('Received payload from token:', payload); // Debug log
     const user = await this.usersService.findById(payload.sub);
     if (!user) {
       console.log('User not found for sub:', payload.sub); // Debug log
       throw new UnauthorizedException();
     }
+
+    if (user.tokenBlacklistedAt) {
+      const tokenIssuedAt = new Date(payload.iat * 1000);
+      if (tokenIssuedAt < user.tokenBlacklistedAt) {
+        console.log('Token is blacklisted for user:', user.id); // Debug log
+        throw new UnauthorizedException('Token has been invalidated');
+      }
+    }
+
     console.log('User validated:', user); // Debug log
     return { sub: payload.sub, email: payload.email, role: payload.role };
   }

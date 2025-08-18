@@ -25,11 +25,7 @@ export class UsersService {
     return this.usersRepository.save(user);
   }
 
-  async update(
-    id: string,
-    updateUserDto: UpdateUserDto,
-    profilePicture?: Express.Multer.File,
-  ): Promise<User> {
+  async update(id: string, updateUserDto: UpdateUserDto): Promise<User> {
     const user = await this.findById(id);
     if (!user) {
       throw new BadRequestException('User not found');

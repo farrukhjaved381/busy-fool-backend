@@ -7,7 +7,7 @@ export class AddUserProfileFields1754054828050 implements MigrationInterface {
     // This migration is a duplicate of the previous one and has been intentionally left empty.
   }
 
-  public async down(queryRunner: QueryRunner): Promise<void> {
+  public async down(): Promise<void> {
     // This migration is a duplicate of the previous one and has been intentionally left empty.
   }
 }

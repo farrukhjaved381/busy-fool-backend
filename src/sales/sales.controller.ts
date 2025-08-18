@@ -5,16 +5,13 @@ import {
   Get,
   Query,
   UseGuards,
-  Request,
-  HttpCode,
+  Req,
   HttpStatus,
   Delete,
   Param,
-  UploadedFile,
-  UseInterceptors,
   Patch,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+
 import { SalesService } from './sales.service';
 import { CreateSaleDto } from './dto/create-sale.dto';
 import { UpdateSaleDto } from './dto/update-sale.dto';
@@ -25,18 +22,16 @@ import {
   ApiBearerAuth,
   ApiQuery,
   ApiBody,
-  ApiConsumes,
 } from '@nestjs/swagger';
 import { Sale } from './entities/sale.entity';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { UserRole } from '../users/user.entity';
-import * as csvParser from 'fast-csv';
+import { RequestWithUser } from '../auth/interfaces/request-with-user.interface';
 import { InjectRepository } from '@nestjs/typeorm';
 import { CsvMappings } from '../csv_mappings/entities/csv-mappings.entity';
 import { Repository } from 'typeorm';
-import { CsvSaleDto } from './dto/csv-sale.dto';
 
 @ApiTags('Sales')
 @Controller('sales')
@@ -64,7 +59,7 @@ export class SalesController {
       'Sale successfully recorded and product quantity_sold updated.',
     type: Sale,
   })
-  async create(@Body() createSaleDto: CreateSaleDto, @Request() req: any) {
+  async create(@Body() createSaleDto: CreateSaleDto, @Req() req: RequestWithUser) {
     return this.salesService.create(createSaleDto, req.user.sub);
   }
 
@@ -77,7 +72,7 @@ export class SalesController {
     description: 'List of sales',
     type: [Sale],
   })
-  async findAll(@Request() req: any) {
+  async findAll(@Req() req: RequestWithUser) {
     return this.salesService.findAll(req.user.sub);
   }
 
@@ -94,7 +89,7 @@ export class SalesController {
     description:
       'Sale successfully deleted and product quantity_sold decremented.',
   })
-  async remove(@Param('id') id: string, @Request() req: any) {
+  async remove(@Param('id') id: string, @Req() req: RequestWithUser) {
     return this.salesService.remove(id, req.user.sub);
   }
 
@@ -121,7 +116,7 @@ export class SalesController {
   async update(
     @Param('id') id: string,
     @Body() updateSaleDto: UpdateSaleDto,
-    @Request() req: any,
+    @Req() req: RequestWithUser,
   ) {
     return this.salesService.update(id, updateSaleDto, req.user.sub);
   }
@@ -135,7 +130,7 @@ export class SalesController {
   async getDashboard(
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
-    @Request() req: any,
+    @Req() req: RequestWithUser,
   ) {
     return this.salesService.getDashboard(
       new Date(startDate),
@@ -153,7 +148,7 @@ export class SalesController {
   async getMonthlyRealityCheck(
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
-    @Request() req: any,
+    @Req() req: RequestWithUser,
   ) {
     return this.salesService.getMonthlyRealityCheck(
       new Date(startDate),

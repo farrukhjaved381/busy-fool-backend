@@ -205,7 +205,7 @@ export class IngredientsService {
     }
 
     const headers = await this.extractHeaders(file.path);
-    const { suggestedMappings, unmappedColumns, warnings } =
+    const { suggestedMappings, unmappedColumns } =
       this.generateMappings(headers);
     const autoMapping = this.generateAutoMapping(headers, suggestedMappings);
 

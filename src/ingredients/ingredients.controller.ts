@@ -7,7 +7,7 @@ import {
   Param,
   Delete,
   UseGuards,
-  Request,
+  Req,
   UseInterceptors,
   UploadedFile,
   BadRequestException,
@@ -32,7 +32,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import * as multer from 'multer';
 import * as path from 'path';
 import * as fs from 'fs';
-import { Request as ExpressRequest } from 'express';
+import { RequestWithUser } from '../auth/interfaces/request-with-user.interface';
 
 @ApiTags('ingredients')
 @Controller('ingredients')
@@ -51,11 +51,11 @@ export class IngredientsController {
   @ApiBody({ type: CreateIngredientDto })
   async create(
     @Body() createIngredientDto: CreateIngredientDto,
-    @Request() req: ExpressRequest,
+    @Req() req: RequestWithUser,
   ): Promise<Ingredient> {
     return await this.ingredientsService.create(
       createIngredientDto,
-      (req as any).user.sub,
+      req.user.sub,
     );
   }
 
@@ -69,11 +69,11 @@ export class IngredientsController {
   @ApiBody({ type: [CreateIngredientDto] })
   async bulkCreate(
     @Body() createIngredientDtos: CreateIngredientDto[],
-    @Request() req: ExpressRequest,
+    @Req() req: RequestWithUser,
   ): Promise<Ingredient[]> {
     return await this.ingredientsService.bulkCreate(
       createIngredientDtos,
-      (req as any).user.sub,
+      req.user.sub,
     );
   }
 
@@ -124,10 +124,10 @@ export class IngredientsController {
   })
   async importCsv(
     @UploadedFile() file: Express.Multer.File,
-    @Request() req: ExpressRequest,
+    @Req() req: RequestWithUser,
   ): Promise<any> {
     if (!file) throw new BadRequestException('No file uploaded');
-    return await this.ingredientsService.importCsv(file, (req as any).user.sub);
+    return await this.ingredientsService.importCsv(file, req.user.sub);
   }
 
   @Get()
@@ -135,8 +135,8 @@ export class IngredientsController {
   @ApiResponse({ status: 200, description: 'List of all ingredients' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 403, description: 'Forbidden' })
-  async findAll(@Request() req: ExpressRequest): Promise<Ingredient[]> {
-    return await this.ingredientsService.findAll((req as any).user.sub);
+  async findAll(@Req() req: RequestWithUser): Promise<Ingredient[]> {
+    return await this.ingredientsService.findAll(req.user.sub);
   }
 
   @Get(':id')
@@ -147,9 +147,9 @@ export class IngredientsController {
   @ApiResponse({ status: 403, description: 'Forbidden' })
   async findOne(
     @Param('id') id: string,
-    @Request() req: ExpressRequest,
+    @Req() req: RequestWithUser,
   ): Promise<Ingredient> {
-    return await this.ingredientsService.findOne(id, (req as any).user.sub);
+    return await this.ingredientsService.findOne(id, req.user.sub);
   }
 
   @Patch(':id')
@@ -164,12 +164,12 @@ export class IngredientsController {
   async update(
     @Param('id') id: string,
     @Body() updateIngredientDto: UpdateIngredientDto,
-    @Request() req: ExpressRequest,
+    @Req() req: RequestWithUser,
   ): Promise<Ingredient> {
     return await this.ingredientsService.update(
       id,
       updateIngredientDto,
-      (req as any).user.sub,
+      req.user.sub,
     );
   }
 
@@ -182,8 +182,8 @@ export class IngredientsController {
   @ApiResponse({ status: 403, description: 'Forbidden' })
   async remove(
     @Param('id') id: string,
-    @Request() req: ExpressRequest,
+    @Req() req: RequestWithUser,
   ): Promise<void> {
-    await this.ingredientsService.remove(id, (req as any).user.sub);
+    await this.ingredientsService.remove(id, req.user.sub);
   }
 }

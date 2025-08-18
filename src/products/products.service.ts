@@ -37,7 +37,6 @@ export class ProductsService {
     private readonly stockService: StockService,
     private readonly entityManager: EntityManager,
     private readonly usersService: UsersService, // Inject UsersService
-    
   ) {}
 
   async create(
@@ -672,12 +671,8 @@ export class ProductsService {
     console.log(
       `Checking stock for ingredient ${ingredient.id}, requested: ${requestedQuantity} ${requestedUnit}`,
     );
-    const ingredientWithStocks = await this.ingredientsService.findOne(
-      ingredient.id,
-      userId,
-    );
     const stocks = await this.stockRepository.find({
-      where: { ingredient: { id: ingredient.id } },
+      where: { ingredient: { id: ingredient.id }, user: { id: userId } },
       order: { purchased_at: 'ASC' },
     });
     console.log(`Stocks found:`, stocks);
@@ -727,11 +722,7 @@ export class ProductsService {
     return this.stockRepository.save(stock);
   }
 
-  async convertQuantity(
-    quantity: any,
-    fromUnit: string,
-    toUnit: string,
-  ): Promise<number> {
+  convertQuantity(quantity: any, fromUnit: string, toUnit: string): number {
     const numQuantity =
       typeof quantity === 'number' ? quantity : parseFloat(quantity);
     if (isNaN(numQuantity))

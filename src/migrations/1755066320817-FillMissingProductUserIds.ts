@@ -12,5 +12,5 @@ export class FillMissingProductUserIds1755066320817
         `);
   }
 
-  public async down(queryRunner: QueryRunner): Promise<void> {}
+  public async down(): Promise<void> {}
 }

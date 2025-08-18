@@ -68,11 +68,10 @@ export class SalesService {
     }
 
     // Get max producible quantity
-    const { maxQuantity, stockUpdates } =
-      await this.productsService.getMaxProducibleQuantity(
-        createSaleDto.productId,
-        userId,
-      );
+    const { maxQuantity } = await this.productsService.getMaxProducibleQuantity(
+      createSaleDto.productId,
+      userId,
+    );
     if (createSaleDto.quantity > maxQuantity) {
       // Calculate stock updates based on requested quantity for accurate remaining amounts
       const adjustedStockUpdates: {
@@ -143,21 +142,6 @@ export class SalesService {
           ingredientId,
           { quantity: neededQuantity, unit: requestedUnit },
         ] of Object.entries(totalIngredientQuantities)) {
-          const totalAvailable = await this.stockService.getAvailableStock(
-            ingredientId,
-            userId,
-          );
-          const neededInLiters = await this.productsService.convertQuantity(
-            neededQuantity,
-            requestedUnit,
-            'L',
-          ); // Use productsService
-          if (totalAvailable < neededInLiters) {
-            throw new BadRequestException(
-              `Insufficient stock for ingredient ${ingredientId}. Available: ${totalAvailable.toFixed(2)}L, Needed: ${neededInLiters.toFixed(2)}L`,
-            );
-          }
-
           let remainingToDeduct = neededQuantity;
           const stocks = await this.stockService.findAllByIngredientId(
             ingredientId,
@@ -233,9 +217,12 @@ export class SalesService {
         await transactionalEntityManager.save(sale);
 
         // Manually update quantity_sold for the product
-        const productToUpdate = await transactionalEntityManager.findOne(Product, {
-          where: { id: product.id },
-        });
+        const productToUpdate = await transactionalEntityManager.findOne(
+          Product,
+          {
+            where: { id: product.id },
+          },
+        );
         if (productToUpdate) {
           productToUpdate.quantity_sold =
             Number(productToUpdate.quantity_sold) +
@@ -327,8 +314,7 @@ export class SalesService {
 
     Object.assign(existingSale, updateSaleDto);
     if (updateSaleDto.quantity && existingSale.product) {
-      existingSale.total_amount =
-        existingSale.product.sell_price * newQuantity;
+      existingSale.total_amount = existingSale.product.sell_price * newQuantity;
     }
     return this.salesRepository.save(existingSale);
   }
