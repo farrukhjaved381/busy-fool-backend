@@ -5,7 +5,10 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import * as path from 'path';
 import * as fs from 'fs';
+import cookieParser from 'cookie-parser';
 import { AuthModule } from './auth/auth.module';
+
+
 import { UsersModule } from './users/users.module';
 import { IngredientsModule } from './ingredients/ingredients.module';
 import { ProductsModule } from './products/products.module';
@@ -32,6 +35,8 @@ async function bootstrap() {
 
   // Enable global validation pipe
   app.useGlobalPipes(new ValidationPipe());
+
+  app.use(cookieParser());
 
   // Swagger configuration
   const config = new DocumentBuilder()
@@ -66,15 +71,6 @@ async function bootstrap() {
   httpAdapter.get('/api-json', (req: Request, res: Response) => {
     res.json(document);
   });
-
-  // IMPORTANT: Vercel has a read-only filesystem, except for the /tmp directory.
-  // The file upload logic has been pointed to '/tmp/uploads', but this is not persistent storage.
-  // Files stored here will be lost. For persistent file uploads, you must use a cloud storage service like AWS S3.
-  const uploadDir = '/tmp/uploads';
-  if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
-  }
-  app.useStaticAssets(uploadDir, { prefix: '/uploads' });
 
   // Serve the Swagger UI
   // Serve the static swagger.html file

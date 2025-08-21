@@ -11,27 +11,30 @@ import {
   UseInterceptors,
   UploadedFile,
   UnauthorizedException,
+  Res,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AuthService } from './auth.service';
 import { CreateUserDto } from '../users/dto/create-user.dto';
 import { UpdateUserDto } from '../users/dto/update-user.dto';
 import { LoginDto } from './dto/login.dto';
-import { AuthResponseDto } from './dto/auth-response.dto';
 import {
   ApiTags,
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
   ApiBody,
+  ApiConsumes, // Added ApiConsumes
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { LogoutGuard } from './logout.guard';
 import { User } from '../users/user.entity';
 import { diskStorage } from 'multer';
-import { extname } from 'path';
+import * as path from 'path'; // Changed import for path
 import { RequestWithUser } from './interfaces/request-with-user.interface';
 import * as fs from 'fs';
+import { Response } from 'express';
+import { setRefreshCookie, clearRefreshCookie } from './token.helpers';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -43,7 +46,7 @@ export class AuthController {
   @ApiResponse({
     status: 201,
     description: 'User registered successfully',
-    type: AuthResponseDto,
+    schema: { type: 'object', properties: { accessToken: { type: 'string' } } },
   })
   @ApiResponse({
     status: 400,
@@ -61,8 +64,10 @@ export class AuthController {
       required: ['name', 'email', 'password', 'role'],
     },
   })
-  register(@Body() createUserDto: CreateUserDto) {
-    return this.authService.register(createUserDto);
+  async register(@Body() createUserDto: CreateUserDto, @Res({ passthrough: true }) res: Response, @Request() req: RequestWithUser) {
+    const { accessToken, refreshToken } = await this.authService.register(createUserDto);
+    setRefreshCookie(res, refreshToken, process.env.COOKIE_DOMAIN, req);
+    return { accessToken };
   }
 
   @Post('login')
@@ -70,7 +75,7 @@ export class AuthController {
   @ApiResponse({
     status: 200,
     description: 'User logged in successfully',
-    type: AuthResponseDto,
+    schema: { type: 'object', properties: { accessToken: { type: 'string' } } },
   })
   @ApiResponse({
     status: 401,
@@ -86,8 +91,10 @@ export class AuthController {
       required: ['email', 'password'],
     },
   })
-  login(@Body() loginDto: LoginDto) {
-    return this.authService.login(loginDto);
+  async login(@Body() loginDto: LoginDto, @Res({ passthrough: true }) res: Response, @Request() req: RequestWithUser) {
+    const { accessToken, refreshToken } = await this.authService.login(loginDto);
+    setRefreshCookie(res, refreshToken, process.env.COOKIE_DOMAIN, req);
+    return { accessToken };
   }
 
   @UseGuards(JwtAuthGuard)
@@ -166,11 +173,23 @@ export class AuthController {
 
   @UseGuards(JwtAuthGuard)
   @Post('upload-profile-picture')
+  @ApiConsumes('multipart/form-data') // Add this line
+  @ApiBody({ // Add this decorator
+    schema: {
+      type: 'object',
+      properties: {
+        profilePicture: {
+          type: 'string',
+          format: 'binary', // This tells Swagger it's a file upload
+        },
+      },
+    },
+  })
   @UseInterceptors(
     FileInterceptor('profilePicture', {
       storage: diskStorage({
         destination: (req, file, cb) => {
-          const uploadPath = '/tmp/uploads';
+          const uploadPath = path.join(__dirname, '..', '..', 'public', 'uploads', 'profile_pictures');
           fs.mkdirSync(uploadPath, { recursive: true });
           cb(null, uploadPath);
         },
@@ -179,7 +198,7 @@ export class AuthController {
             .fill(null)
             .map(() => Math.round(Math.random() * 16).toString(16))
             .join('');
-          cb(null, `${randomName}${extname(file.originalname)}`);
+          cb(null, `${randomName}${path.extname(file.originalname)}`);
         },
       }),
     }),
@@ -205,11 +224,44 @@ export class AuthController {
     description: 'Unauthorized (missing or invalid JWT)',
   })
   @HttpCode(HttpStatus.OK)
-  async logout(@Request() req: RequestWithUser): Promise<{ message: string }> {
+  async logout(@Request() req: RequestWithUser, @Res({ passthrough: true }) res: Response): Promise<{ message: string }> {
     if (!req.user) {
       throw new UnauthorizedException('Invalid or expired token');
     }
-    return this.authService.logout(req.user.sub);
+    const refreshTokenId = req.cookies[process.env.COOKIE_NAME_REFRESH || 'busyfool_rtk'];
+    await this.authService.logout(req.user.sub, refreshTokenId);
+    clearRefreshCookie(res, process.env.COOKIE_DOMAIN);
+    return { message: 'Logged out successfully' };
+  }
+
+  @Post('refresh')
+  @ApiOperation({ summary: 'Refresh access token using a refresh token' })
+  @ApiResponse({
+    status: 200,
+    description: 'Access token refreshed successfully',
+    schema: { type: 'object', properties: { accessToken: { type: 'string' } } },
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized (invalid or expired refresh token)',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        refreshToken: { type: 'string', example: 'your_long_lived_refresh_token', description: 'The refresh token obtained during login' },
+      },
+      required: ['refreshToken'],
+    },
+  })
+  async refresh(@Request() req: RequestWithUser, @Res({ passthrough: true }) res: Response, @Body('refreshToken') bodyRefreshToken?: string) {
+    const refreshToken = bodyRefreshToken || req.cookies[process.env.COOKIE_NAME_REFRESH || 'busyfool_rtk'];
+    if (!refreshToken) {
+      throw new UnauthorizedException('Refresh token not found');
+    }
+    const { accessToken, refreshToken: newRefreshToken } = await this.authService.rotateRefreshToken(refreshToken);
+    setRefreshCookie(res, newRefreshToken, process.env.COOKIE_DOMAIN, req);
+    return { accessToken };
   }
 
   @Post('forgot-password')

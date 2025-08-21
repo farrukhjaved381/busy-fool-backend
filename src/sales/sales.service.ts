@@ -73,42 +73,18 @@ export class SalesService {
       userId,
     );
     if (createSaleDto.quantity > maxQuantity) {
-      // Calculate stock updates based on requested quantity for accurate remaining amounts
-      const adjustedStockUpdates: {
-        ingredientId: string;
-        remainingQuantity: number;
-        unit: string;
-      }[] = [];
+      let insufficientIngredient = '';
       for (const pi of product.ingredients) {
-        const ingredientId = pi.ingredient.id;
-        const currentStock = await this.stockRepository.findOne({
-          where: { ingredient: { id: ingredientId } },
-          order: { purchased_at: 'ASC' },
-        });
-        if (currentStock) {
-          const neededTotal = pi.quantity * createSaleDto.quantity; // Total needed for requested quantity
-          const neededInStockUnit = await this.productsService.convertQuantity(
-            neededTotal,
-            pi.unit,
-            currentStock.unit,
-          ); // Use productsService
-          const remaining = currentStock.remaining_quantity - neededInStockUnit;
-          adjustedStockUpdates.push({
-            ingredientId,
-            remainingQuantity: Math.max(0, Number(remaining.toFixed(2))),
-            unit: currentStock.unit,
-          });
+        const available = await this.stockService.getAvailableStock(pi.ingredient.id, userId);
+        const needed = pi.quantity * createSaleDto.quantity;
+        const availableInNeededUnit = this.productsService.convertQuantity(available, pi.ingredient.unit, pi.unit);
+        if (availableInNeededUnit < needed) {
+          insufficientIngredient = `Insufficient stock for ingredient ${pi.ingredient.name}. Available: ${availableInNeededUnit.toFixed(2)}${pi.unit}, Needed: ${needed.toFixed(2)}${pi.unit}`;
+          break;
         }
       }
-      const stockUpdateDetails = adjustedStockUpdates
-        .map(
-          (update) =>
-            `Remaining: ${update.remainingQuantity} ${update.unit} for ingredient ${update.ingredientId}`,
-        )
-        .join(', ');
       throw new BadRequestException(
-        `Insufficient stock. Maximum sellable quantity is ${maxQuantity}. ${stockUpdateDetails}. ` +
-          `Available stock details: Check individual ingredient availability.`,
+        `Insufficient stock. Maximum sellable quantity is ${maxQuantity}. ${insufficientIngredient}`
       );
     }
 

@@ -35,27 +35,16 @@ export class CreateIngredientDto {
   @IsNumber()
   @IsOptional()
   @Min(0)
-  @ApiProperty({
-    description: 'Cost per milliliter',
-    example: 0.00281,
-    required: false,
-  })
   cost_per_ml?: number;
 
   @IsNumber()
   @IsOptional()
   @Min(0)
-  @ApiProperty({
-    description: 'Cost per gram',
-    example: 0.0157,
-    required: false,
-  })
   cost_per_gram?: number;
 
   @IsNumber()
   @IsOptional()
   @Min(0)
-  @ApiProperty({ description: 'Cost per unit', example: 1.25, required: false })
   cost_per_unit?: number;
 
   @IsString()

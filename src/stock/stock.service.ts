@@ -48,11 +48,14 @@ export class StockService {
     });
   }
 
-  convertQuantity(quantity: number, fromUnit: string, toUnit: string): number {
+  convertQuantity(quantity: any, fromUnit: string, toUnit: string): number {
+    const numQuantity = typeof quantity === 'number' ? quantity : parseFloat(quantity);
+    if (isNaN(numQuantity)) throw new BadRequestException('Invalid quantity value');
+
     const fromLower = fromUnit.toLowerCase().replace(/s$/, '');
     const toLower = toUnit.toLowerCase().replace(/s$/, '');
 
-    if (fromLower === toLower) return Number(quantity.toFixed(2));
+    if (fromLower === toLower) return Number(numQuantity.toFixed(2));
 
     const conversionFactors: { [key: string]: number } = {
       ml: 1,
@@ -64,9 +67,9 @@ export class StockService {
     const toFactor = conversionFactors[toLower] || 1;
 
     if (fromLower === 'unit' && toLower === 'unit')
-      return Number(quantity.toFixed(2));
+      return Number(numQuantity.toFixed(2));
     if (fromFactor && toFactor) {
-      const converted = (quantity * fromFactor) / toFactor;
+      const converted = (numQuantity * fromFactor) / toFactor;
       return Number(converted.toFixed(2));
     }
     throw new BadRequestException(
@@ -78,11 +81,20 @@ export class StockService {
     ingredientId: string,
     userId: string,
   ): Promise<number> {
+    const ingredient = await this.ingredientsService.findOne(ingredientId, userId);
+    if (!ingredient) {
+      throw new NotFoundException(`Ingredient with ID ${ingredientId} not found`);
+    }
     const stocks = await this.findAllByIngredientId(ingredientId, userId);
-    return stocks.reduce(
-      (sum, stock) => sum + (Number(stock.remaining_quantity) || 0),
-      0,
-    );
+    let totalStock = 0;
+    for (const stock of stocks) {
+      totalStock += this.convertQuantity(
+        Number(stock.remaining_quantity), // Explicitly cast to number
+        stock.unit,
+        ingredient.unit,
+      );
+    }
+    return totalStock;
   }
 
   isCompatibleUnit(unit1: string, unit2: string): boolean {

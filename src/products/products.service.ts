@@ -82,32 +82,13 @@ export class ProductsService {
       const lineCost = ingredientDto.quantity * trueCost;
       totalCost += lineCost;
 
-      const stock = await this.getAvailableStock(
-        ingredient,
-        ingredientDto.unit,
+      // Deduct stock from batches
+      await this.deductStockFromBatches(
+        ingredientDto.ingredientId,
         ingredientDto.quantity,
+        ingredientDto.unit,
         userId,
       );
-      if (!stock || stock.remaining_quantity <= 0) {
-        throw new BadRequestException(
-          `No available stock for ingredient ${ingredientDto.ingredientId} and unit ${ingredientDto.unit}.`,
-        );
-      }
-      const deductionInStockUnit = await this.convertQuantity(
-        ingredientDto.quantity,
-        ingredientDto.unit,
-        stock.unit,
-      );
-      if (stock.remaining_quantity < deductionInStockUnit) {
-        throw new BadRequestException(
-          `Insufficient stock. Required: ${deductionInStockUnit.toFixed(2)} ${stock.unit}, Available: ${stock.remaining_quantity.toFixed(2)} ${stock.unit}`,
-        );
-      }
-      stock.remaining_quantity = Math.max(
-        0,
-        stock.remaining_quantity - deductionInStockUnit,
-      );
-      await this.updateStock(stock);
 
       const productIngredient = this.productIngredientRepository.create({
         ingredient,
@@ -137,12 +118,6 @@ export class ProductsService {
     });
 
     const savedProduct = await this.productRepository.save(product);
-
-    for (const productIngredient of productIngredients) {
-      productIngredient.product = savedProduct;
-      productIngredient.productId = savedProduct.id;
-      await this.productIngredientRepository.save(productIngredient);
-    }
 
     return classToPlain(savedProduct) as Product;
   }
@@ -178,6 +153,7 @@ export class ProductsService {
     const existingStocks = await this.stockRepository.find({
       where: {
         ingredient: { id: ingredientId },
+        user: { id: userId },
         remaining_quantity: MoreThan(0),
       },
     });
@@ -214,6 +190,7 @@ export class ProductsService {
       createStockDto.purchase_price / createStockDto.purchased_quantity;
     const newStock = this.stockRepository.create({
       ingredient: { id: ingredientId },
+      user: { id: userId },
       purchased_quantity: createStockDto.purchased_quantity,
       unit: createStockDto.unit,
       total_purchased_price: createStockDto.purchase_price,
@@ -289,10 +266,12 @@ export class ProductsService {
   async findAll(userId: string): Promise<Product[]> {
     // Modified to accept userId
     console.log('Fetching all products for user:', userId);
-    return this.productRepository.find({
-      where: { user: { id: userId } }, // Filter by user ID
-      relations: ['ingredients', 'ingredients.ingredient'],
-    });
+    return this.productRepository
+      .createQueryBuilder('product')
+      .leftJoinAndSelect('product.ingredients', 'productIngredient')
+      .leftJoinAndSelect('productIngredient.ingredient', 'ingredient')
+      .where('product.user.id = :userId', { userId })
+      .getMany();
   }
 
   async findAllByUser(userId: string): Promise<Product[]> {
@@ -301,10 +280,13 @@ export class ProductsService {
 
   async findOne(id: string, userId: string): Promise<Product> {
     console.log('Finding product with ID:', id, 'for user:', userId);
-    const product = await this.productRepository.findOne({
-      where: { id, user: { id: userId } },
-      relations: ['ingredients', 'ingredients.ingredient'],
-    });
+    const product = await this.productRepository
+      .createQueryBuilder('product')
+      .leftJoinAndSelect('product.ingredients', 'productIngredient')
+      .leftJoinAndSelect('productIngredient.ingredient', 'ingredient')
+      .where('product.id = :id', { id })
+      .andWhere('product.user.id = :userId', { userId })
+      .getOne();
     if (!product)
       throw new NotFoundException(
         `Product with ID ${id} not found for this user`,
@@ -313,10 +295,13 @@ export class ProductsService {
   }
 
   async findByName(name: string, userId: string): Promise<Product | null> {
-    return this.productRepository.findOne({
-      where: { name, user: { id: userId } },
-      relations: ['ingredients', 'ingredients.ingredient'],
-    });
+    return this.productRepository
+      .createQueryBuilder('product')
+      .leftJoinAndSelect('product.ingredients', 'productIngredient')
+      .leftJoinAndSelect('productIngredient.ingredient', 'ingredient')
+      .where('product.name = :name', { name })
+      .andWhere('product.user.id = :userId', { userId })
+      .getOne();
   }
 
   async update(
@@ -720,6 +705,68 @@ export class ProductsService {
       );
     }
     return this.stockRepository.save(stock);
+  }
+
+  private async deductStockFromBatches(
+    ingredientId: string,
+    requestedQuantity: number,
+    requestedUnit: string,
+    userId: string,
+  ): Promise<void> {
+    console.log(`deductStockFromBatches: ingredientId = ${ingredientId}, userId = ${userId}`);
+    let remainingToDeduct = this.convertQuantity(
+      requestedQuantity,
+      requestedUnit,
+      (await this.ingredientsService.findOne(ingredientId, userId)).unit, // Convert requested quantity to ingredient's base unit
+    );
+
+    const stocksToDeduct = await this.stockRepository.find({
+      where: { ingredient: { id: ingredientId } },
+      relations: ['ingredient'], // Explicitly load the ingredient relation
+      order: { purchased_at: 'ASC' },
+    });
+    console.log(`deductStockFromBatches: stocksToDeduct =`, stocksToDeduct);
+
+    if (stocksToDeduct.length === 0) {
+      throw new BadRequestException(
+        `No stock found for ingredient ${ingredientId}.`,
+      );
+    }
+
+    for (const stock of stocksToDeduct) {
+      if (remainingToDeduct <= 0) break;
+
+      const stockRemainingInIngredientBaseUnit = this.convertQuantity(
+        stock.remaining_quantity,
+        stock.unit,
+        (await this.ingredientsService.findOne(ingredientId, userId)).unit,
+      );
+
+      const deductionAmountInIngredientBaseUnit = Math.min(
+        remainingToDeduct,
+        stockRemainingInIngredientBaseUnit,
+      );
+
+      const deductionAmountInStockUnit = this.convertQuantity(
+        deductionAmountInIngredientBaseUnit,
+        (await this.ingredientsService.findOne(ingredientId, userId)).unit,
+        stock.unit,
+      );
+
+      stock.remaining_quantity = Math.max(
+        0,
+        stock.remaining_quantity - deductionAmountInStockUnit,
+      );
+      await this.updateStock(stock); // Save the updated stock batch
+
+      remainingToDeduct -= deductionAmountInIngredientBaseUnit;
+    }
+
+    if (remainingToDeduct > 0) {
+      throw new BadRequestException(
+        `Insufficient total stock for ingredient ${ingredientId}. Remaining: ${remainingToDeduct.toFixed(2)} ${requestedUnit}`,
+      );
+    }
   }
 
   convertQuantity(quantity: any, fromUnit: string, toUnit: string): number {
