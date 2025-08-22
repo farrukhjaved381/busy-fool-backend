@@ -200,9 +200,12 @@ export class SalesService {
           },
         );
         if (productToUpdate) {
+          console.log(`Product ${productToUpdate.name} (ID: ${productToUpdate.id}) - quantity_sold BEFORE update: ${productToUpdate.quantity_sold}`);
+          console.log(`Sale quantity: ${createSaleDto.quantity}`);
           productToUpdate.quantity_sold =
             Number(productToUpdate.quantity_sold) +
             Number(createSaleDto.quantity);
+          console.log(`Product ${productToUpdate.name} (ID: ${productToUpdate.id}) - quantity_sold AFTER update: ${productToUpdate.quantity_sold}`);
           await transactionalEntityManager.save(productToUpdate);
         }
 

@@ -376,8 +376,11 @@ export class CsvMappingsService {
         await this.saleRepository.save(sale);
 
         // Manually update quantity_sold for the product
+        console.log(`CSV Import: Product ${productRecord.name} (ID: ${productRecord.id}) - quantity_sold BEFORE update: ${productRecord.quantity_sold}`);
+        console.log(`CSV Import: Sale quantity: ${quantitySold}`);
         productRecord.quantity_sold =
           Number(productRecord.quantity_sold) + Number(quantitySold);
+        console.log(`CSV Import: Product ${productRecord.name} (ID: ${productRecord.id}) - quantity_sold AFTER update: ${productRecord.quantity_sold}`);
         await this.productRepository.save(productRecord);
       }
 
@@ -516,8 +519,11 @@ export class CsvMappingsService {
         await this.saleRepository.save(sale);
 
         // Manually update quantity_sold for the product
+        console.log(`CSV Import: Product ${productRecord.name} (ID: ${productRecord.id}) - quantity_sold BEFORE update: ${productRecord.quantity_sold}`);
+        console.log(`CSV Import: Sale quantity: ${quantitySold}`);
         productRecord.quantity_sold =
           Number(productRecord.quantity_sold) + Number(quantitySold);
+        console.log(`CSV Import: Product ${productRecord.name} (ID: ${productRecord.id}) - quantity_sold AFTER update: ${productRecord.quantity_sold}`);
         await this.productRepository.save(productRecord);
       }
 

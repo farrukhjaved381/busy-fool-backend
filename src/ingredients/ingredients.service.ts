@@ -109,6 +109,7 @@ export class IngredientsService {
       remaining_quantity: createIngredientDto.quantity * usablePercentage,
       wasted_quantity: 0,
       purchased_at: new Date(),
+      user: user, // Associate stock with user
     });
     await this.stockRepository.save(stock);
 
@@ -168,6 +169,7 @@ export class IngredientsService {
         remaining_quantity: dto.quantity * usablePercentage,
         wasted_quantity: 0,
         purchased_at: new Date(),
+        user: user, // Associate stock with user
       });
       await this.stockRepository.save(stock);
 
@@ -272,6 +274,7 @@ export class IngredientsService {
           remaining_quantity: createDto.quantity * usablePercentage,
           wasted_quantity: 0,
           purchased_at: new Date(),
+          user: user, // Associate stock with user
         });
         await this.stockRepository.save(stock);
 

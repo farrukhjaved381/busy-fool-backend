@@ -140,6 +140,7 @@ export class PurchasesService {
         remaining_quantity: remainingQuantity,
         wasted_quantity: 0,
         purchased_at: new Date(),
+        user: user, // Associate stock with user
       });
     }
 

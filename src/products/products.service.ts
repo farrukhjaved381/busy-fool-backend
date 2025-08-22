@@ -799,19 +799,21 @@ export class ProductsService {
       where: {
         ingredient: { id: ingredientId },
         user: { id: userId },
-        remaining_quantity: MoreThan(0),
       },
       order: { purchased_at: 'ASC' },
     });
 
-    if (!stocks || stocks.length === 0) {
+    // Manually filter for remaining_quantity > 0
+    const availableStocks = stocks.filter(stock => Number(stock.remaining_quantity) > 0);
+
+    if (!availableStocks || availableStocks.length === 0) {
       throw new BadRequestException(
         `No available stock for ${ingredient.name}`,
       );
     }
 
     // Deduct from each stock batch until we've deducted the full amount
-    for (const stock of stocks) {
+    for (const stock of availableStocks) {
       if (remainingToDeduct <= 0) break;
 
       let stockQuantityInBaseUnit = stock.remaining_quantity;
