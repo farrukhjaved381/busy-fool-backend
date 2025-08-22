@@ -330,23 +330,69 @@ export class ProductsService {
     let totalCost = 0;
     const productIngredients: ProductIngredient[] = [];
 
+    // Store old ingredients for delta calculation
+    const oldProduct = await this.productRepository.findOne({
+      where: { id, user: { id: userId } },
+      relations: ['ingredients', 'ingredients.ingredient'], // Ensure ingredient details are loaded
+    });
+
+    const oldIngredientsMap = new Map<string, { quantity: number; unit: string }>();
+    if (oldProduct && oldProduct.ingredients) {
+      for (const pi of oldProduct.ingredients) {
+        oldIngredientsMap.set(pi.ingredient.id, { quantity: pi.quantity, unit: pi.unit });
+      }
+    }
+
     if (updateProductDto.ingredients) {
       await this.entityManager.transaction(
         async (transactionalEntityManager) => {
+          const newIngredientsMap = new Map<string, { ingredientId: string; quantity: number; unit: string }>();
+          for (const ingredientDto of updateProductDto.ingredients || []) {
+            newIngredientsMap.set(ingredientDto.ingredientId, { ingredientId: ingredientDto.ingredientId, quantity: ingredientDto.quantity, unit: ingredientDto.unit });
+          }
+
+          // Calculate deltas and adjust stock
+          const allIngredientIds = new Set([...oldIngredientsMap.keys(), ...newIngredientsMap.keys()]);
+
+          for (const ingredientId of allIngredientIds) {
+            const oldIngredient = oldIngredientsMap.get(ingredientId);
+            const newIngredient = newIngredientsMap.get(ingredientId);
+
+            let quantityDelta = 0;
+            let unitToUse = '';
+
+            if (oldIngredient && newIngredient) {
+              // Ingredient exists in both old and new, calculate difference
+              quantityDelta = newIngredient.quantity - oldIngredient.quantity;
+              unitToUse = newIngredient.unit; // Use new unit for delta
+            } else if (newIngredient) {
+              // Ingredient is new, full deduction
+              quantityDelta = newIngredient.quantity;
+              unitToUse = newIngredient.unit;
+            } else if (oldIngredient) {
+              // Ingredient removed, full refund
+              quantityDelta = -oldIngredient.quantity;
+              unitToUse = oldIngredient.unit;
+            }
+
+            if (quantityDelta !== 0) {
+              await this.adjustStock(
+                ingredientId,
+                quantityDelta,
+                unitToUse,
+                userId,
+                transactionalEntityManager,
+              );
+            }
+          }
+
+          // Delete old product ingredients
           await transactionalEntityManager.delete(ProductIngredient, {
             product: { id },
           });
 
+          // Create new product ingredients
           for (const ingredientDto of updateProductDto.ingredients || []) {
-            if (
-              !ingredientDto.ingredientId ||
-              ingredientDto.quantity <= 0 ||
-              !ingredientDto.unit
-            ) {
-              throw new BadRequestException(
-                'Each ingredient must have a valid ID, positive quantity, and unit',
-              );
-            }
             const ingredient = await this.ingredientsService.findOne(
               ingredientDto.ingredientId,
               userId,
@@ -355,34 +401,6 @@ export class ProductsService {
               throw new BadRequestException(
                 `Ingredient ${ingredientDto.ingredientId} not found`,
               );
-
-            const stockDeduction = ingredientDto.quantity;
-            const stock = await this.getAvailableStock(
-              ingredient,
-              ingredientDto.unit,
-              stockDeduction,
-              userId,
-            );
-            if (!stock) {
-              throw new BadRequestException(
-                `Insufficient stock for ingredient ${ingredientDto.ingredientId} after update.`,
-              );
-            }
-            const deductionInStockUnit = await this.convertQuantity(
-              stockDeduction,
-              ingredientDto.unit,
-              stock.unit,
-            );
-            if (stock.remaining_quantity < deductionInStockUnit) {
-              throw new BadRequestException(
-                `Insufficient stock. Required: ${deductionInStockUnit.toFixed(2)} ${stock.unit}, Available: ${stock.remaining_quantity.toFixed(2)} ${stock.unit}`,
-              );
-            }
-            stock.remaining_quantity = Math.max(
-              0,
-              stock.remaining_quantity - deductionInStockUnit,
-            );
-            await transactionalEntityManager.save(Stock, stock);
 
             const trueCost = this.calculateTrueCost(
               ingredient,
@@ -414,6 +432,7 @@ export class ProductsService {
         },
       );
     } else {
+      // If no ingredients are provided in updateProductDto, recalculate totalCost based on existing ingredients
       let totalCost = 0;
       for (const pi of product.ingredients) {
         const trueCost = this.calculateTrueCost(pi.ingredient, pi.unit);
@@ -654,48 +673,84 @@ export class ProductsService {
     userId: string,
   ): Promise<Stock> {
     console.log(
-      `Checking stock for ingredient ${ingredient.id}, requested: ${requestedQuantity} ${requestedUnit}`,
+      `Checking stock for ${ingredient.name}: ${requestedQuantity}${requestedUnit}`,
     );
+
+    // Get stocks ONLY for this ingredient with remaining quantity > 0
     const stocks = await this.stockRepository.find({
-      where: { ingredient: { id: ingredient.id }, user: { id: userId } },
+      where: {
+        ingredient: { id: ingredient.id },
+        user: { id: userId },
+        remaining_quantity: MoreThan(0),
+      },
+      relations: ['ingredient'],
       order: { purchased_at: 'ASC' },
     });
-    console.log(`Stocks found:`, stocks);
-    for (const stock of stocks) {
-      console.log(
-        `Evaluating stock ${stock.id}: remaining ${stock.remaining_quantity} ${stock.unit}`,
+
+    if (!stocks || stocks.length === 0) {
+      throw new BadRequestException(
+        `No available stock for ingredient ${ingredient.name}`,
       );
-      if (this.isCompatibleUnit(requestedUnit, stock.unit)) {
-        const requestedInStockUnit = await this.convertQuantity(
-          requestedQuantity,
-          requestedUnit,
-          stock.unit,
-        );
-        console.log(
-          `Converted request: ${requestedQuantity} ${requestedUnit} = ${requestedInStockUnit} ${stock.unit}`,
-        );
-        if (stock.remaining_quantity <= 0 || isNaN(stock.remaining_quantity)) {
-          console.log(`Stock ${stock.id} has no or invalid remaining quantity`);
-          continue;
-        }
-        if (stock.remaining_quantity >= requestedInStockUnit) {
-          console.log(`Stock ${stock.id} is sufficient`);
-          return stock;
-        } else {
-          console.log(
-            `Stock ${stock.id} insufficient: ${stock.remaining_quantity} < ${requestedInStockUnit}`,
-          );
-        }
-      } else {
-        console.log(
-          `Units ${requestedUnit} and ${stock.unit} are incompatible`,
-        );
+    }
+
+    // Convert requested quantity to base unit (kg or L)
+    let requestedInBaseUnit = requestedQuantity;
+    if (requestedUnit === 'g' && ingredient.unit === 'kg') {
+      requestedInBaseUnit = requestedQuantity / 1000;
+    } else if (requestedUnit === 'ml' && ingredient.unit === 'L') {
+      requestedInBaseUnit = requestedQuantity / 1000;
+    }
+
+    console.log(`Requested in ${ingredient.unit}: ${requestedInBaseUnit}`);
+
+    // Calculate total available in base unit
+    let totalAvailable = 0;
+    for (const stock of stocks) {
+      let stockQuantity = Number(stock.remaining_quantity);
+      if (stock.unit === ingredient.unit) {
+        totalAvailable += stockQuantity;
+      } else if (stock.unit === 'g' && ingredient.unit === 'kg') {
+        totalAvailable += stockQuantity / 1000;
+      } else if (stock.unit === 'ml' && ingredient.unit === 'L') {
+        totalAvailable += stockQuantity / 1000;
       }
     }
-    console.log(`No suitable stock found for ${ingredient.id}`);
-    throw new BadRequestException(
-      `No available stock for ingredient ${ingredient.id} and unit ${requestedUnit}.`,
-    );
+
+    console.log(`Total available in ${ingredient.unit}: ${totalAvailable}`);
+
+    // Check if we have enough stock
+    if (totalAvailable < requestedInBaseUnit) {
+      // Convert back to requested unit for error message
+      let availableInRequestedUnit = totalAvailable;
+      if (requestedUnit === 'g' && ingredient.unit === 'kg') {
+        availableInRequestedUnit = totalAvailable * 1000;
+      } else if (requestedUnit === 'ml' && ingredient.unit === 'L') {
+        availableInRequestedUnit = totalAvailable * 1000;
+      }
+
+      throw new BadRequestException(
+        `Insufficient stock for ${ingredient.name}. ` +
+          `Available: ${availableInRequestedUnit.toFixed(2)}${requestedUnit}, ` +
+          `Requested: ${requestedQuantity}${requestedUnit}`,
+      );
+    }
+
+    // Find first stock with enough quantity
+    for (const stock of stocks) {
+      let stockInBaseUnit = Number(stock.remaining_quantity);
+      if (stock.unit === 'g' && ingredient.unit === 'kg') {
+        stockInBaseUnit = stockInBaseUnit / 1000;
+      } else if (stock.unit === 'ml' && ingredient.unit === 'L') {
+        stockInBaseUnit = stockInBaseUnit / 1000;
+      }
+
+      if (stockInBaseUnit >= requestedInBaseUnit) {
+        return stock;
+      }
+    }
+
+    // If no single stock has enough, return the first available one
+    return stocks[0];
   }
 
   private async updateStock(stock: Stock): Promise<Stock> {
@@ -713,59 +768,198 @@ export class ProductsService {
     requestedUnit: string,
     userId: string,
   ): Promise<void> {
-    console.log(`deductStockFromBatches: ingredientId = ${ingredientId}, userId = ${userId}`);
-    let remainingToDeduct = this.convertQuantity(
-      requestedQuantity,
-      requestedUnit,
-      (await this.ingredientsService.findOne(ingredientId, userId)).unit, // Convert requested quantity to ingredient's base unit
+    const ingredient = await this.ingredientsService.findOne(
+      ingredientId,
+      userId,
+    );
+    if (!ingredient) {
+      throw new BadRequestException(`Ingredient ${ingredientId} not found`);
+    }
+
+    console.log(
+      `Deducting stock: ${requestedQuantity}${requestedUnit} of ${ingredient.name}`,
     );
 
-    const stocksToDeduct = await this.stockRepository.find({
-      where: { ingredient: { id: ingredientId } },
-      relations: ['ingredient'], // Explicitly load the ingredient relation
-      order: { purchased_at: 'ASC' },
-    });
-    console.log(`deductStockFromBatches: stocksToDeduct =`, stocksToDeduct);
-
-    if (stocksToDeduct.length === 0) {
+    // Convert requested quantity to base unit
+    let requestedInBaseUnit = requestedQuantity;
+    if (requestedUnit === 'g' && ingredient.unit === 'kg') {
+      requestedInBaseUnit = requestedQuantity / 1000;
+    } else if (requestedUnit === 'ml' && ingredient.unit === 'L') {
+      requestedInBaseUnit = requestedQuantity / 1000;
+    } else if (requestedUnit !== ingredient.unit) {
       throw new BadRequestException(
-        `No stock found for ingredient ${ingredientId}.`,
+        `Invalid unit ${requestedUnit} for ingredient ${ingredient.name}`,
       );
     }
 
-    for (const stock of stocksToDeduct) {
+    let remainingToDeduct = requestedInBaseUnit;
+
+    // Get all available stock batches
+    const stocks = await this.stockRepository.find({
+      where: {
+        ingredient: { id: ingredientId },
+        user: { id: userId },
+        remaining_quantity: MoreThan(0),
+      },
+      order: { purchased_at: 'ASC' },
+    });
+
+    if (!stocks || stocks.length === 0) {
+      throw new BadRequestException(
+        `No available stock for ${ingredient.name}`,
+      );
+    }
+
+    // Deduct from each stock batch until we've deducted the full amount
+    for (const stock of stocks) {
       if (remainingToDeduct <= 0) break;
 
-      const stockRemainingInIngredientBaseUnit = this.convertQuantity(
-        stock.remaining_quantity,
-        stock.unit,
-        (await this.ingredientsService.findOne(ingredientId, userId)).unit,
-      );
+      let stockQuantityInBaseUnit = stock.remaining_quantity;
+      if (stock.unit !== ingredient.unit) {
+        stockQuantityInBaseUnit = this.convertQuantity(
+          stock.remaining_quantity,
+          stock.unit,
+          ingredient.unit,
+        );
+      }
 
-      const deductionAmountInIngredientBaseUnit = Math.min(
+      const deductionInBaseUnit = Math.min(
         remainingToDeduct,
-        stockRemainingInIngredientBaseUnit,
+        stockQuantityInBaseUnit,
       );
 
-      const deductionAmountInStockUnit = this.convertQuantity(
-        deductionAmountInIngredientBaseUnit,
-        (await this.ingredientsService.findOne(ingredientId, userId)).unit,
+      const deductionInStockUnit = this.convertQuantity(
+        deductionInBaseUnit,
+        ingredient.unit,
         stock.unit,
       );
 
       stock.remaining_quantity = Math.max(
         0,
-        stock.remaining_quantity - deductionAmountInStockUnit,
+        stock.remaining_quantity - deductionInStockUnit,
       );
-      await this.updateStock(stock); // Save the updated stock batch
 
-      remainingToDeduct -= deductionAmountInIngredientBaseUnit;
+      await this.updateStock(stock);
+      remainingToDeduct -= deductionInBaseUnit;
     }
 
+    // Check if we were able to deduct the full amount
     if (remainingToDeduct > 0) {
       throw new BadRequestException(
-        `Insufficient total stock for ingredient ${ingredientId}. Remaining: ${remainingToDeduct.toFixed(2)} ${requestedUnit}`,
+        `Insufficient stock for ${ingredient.name}. Could not deduct ${requestedQuantity}${requestedUnit}`,
       );
+    }
+
+    console.log(
+      `Successfully deducted ${requestedQuantity}${requestedUnit} from stock`,
+    );
+  }
+
+  private async adjustStock(
+    ingredientId: string,
+    quantityDelta: number, // positive for deduction, negative for addition
+    unit: string,
+    userId: string,
+    transactionalEntityManager: EntityManager, // Pass the entity manager for transaction
+  ): Promise<void> {
+    const ingredient = await this.ingredientsService.findOne(
+      ingredientId,
+      userId,
+    );
+    if (!ingredient) {
+      throw new BadRequestException(`Ingredient ${ingredientId} not found`);
+    }
+
+    console.log(
+      `Adjusting stock for ${ingredient.name}: ${quantityDelta}${unit}`,
+    );
+
+    // Convert quantityDelta to ingredient's base unit
+    let deltaInIngredientBaseUnit = this.convertQuantity(quantityDelta, unit, ingredient.unit);
+
+    // Get all stock batches for the ingredient
+    const stocks = await transactionalEntityManager.find(Stock, {
+      where: {
+        ingredient: { id: ingredientId },
+        user: { id: userId },
+      },
+      order: { purchased_at: 'ASC' },
+    });
+
+    if (deltaInIngredientBaseUnit > 0) { // Deduction
+      let remainingToDeduct = deltaInIngredientBaseUnit;
+
+      if (!stocks || stocks.length === 0) {
+        throw new BadRequestException(
+          `No available stock for ${ingredient.name}`,
+        );
+      }
+
+      for (const stock of stocks) {
+        if (remainingToDeduct <= 0) break;
+
+        let stockQuantityInStockUnit = stock.remaining_quantity;
+        let stockQuantityInIngredientBaseUnit = this.convertQuantity(
+            stockQuantityInStockUnit,
+            stock.unit,
+            ingredient.unit
+        );
+
+        const deductionFromThisBatchInIngredientBaseUnit = Math.min(
+          remainingToDeduct,
+          stockQuantityInIngredientBaseUnit,
+        );
+
+        const deductionInStockUnit = this.convertQuantity(
+          deductionFromThisBatchInIngredientBaseUnit,
+          ingredient.unit,
+          stock.unit,
+        );
+
+        stock.remaining_quantity = Math.max(
+          0,
+          stockQuantityInStockUnit - deductionInStockUnit,
+        );
+
+        await transactionalEntityManager.save(Stock, stock);
+        remainingToDeduct -= deductionFromThisBatchInIngredientBaseUnit;
+      }
+
+      if (remainingToDeduct > 0) {
+        throw new BadRequestException(
+          `Insufficient stock for ${ingredient.name}. Could not deduct ${quantityDelta}${unit}`,
+        );
+      }
+    } else if (deltaInIngredientBaseUnit < 0) { // Addition (refund)
+      let remainingToAdd = Math.abs(deltaInIngredientBaseUnit);
+
+      // Add to the most recent stock batch if available, otherwise create a new one
+      let targetStock = stocks.length > 0 ? stocks[stocks.length - 1] : null; // Most recent
+
+      if (!targetStock) {
+        // Create a new stock entry for the refund
+        targetStock = transactionalEntityManager.create(Stock, {
+            ingredient: { id: ingredientId },
+            user: { id: userId },
+            purchased_quantity: 0, // This is a refund, not a new purchase
+            unit: ingredient.unit, // Use ingredient's base unit for new stock
+            total_purchased_price: 0,
+            purchase_price_per_unit: ingredient.cost_per_unit || 0,
+            waste_percent: ingredient.waste_percent || 0,
+            remaining_quantity: 0,
+            wasted_quantity: 0,
+            purchased_at: new Date(),
+        });
+      }
+
+      const addInStockUnit = this.convertQuantity(
+        remainingToAdd,
+        ingredient.unit,
+        targetStock.unit,
+      );
+
+      targetStock.remaining_quantity += addInStockUnit;
+      await transactionalEntityManager.save(Stock, targetStock);
     }
   }
 
@@ -851,7 +1045,7 @@ export class ProductsService {
         ingredientId,
         userId,
       );
-      const neededPerUnit = await this.convertQuantity(
+      const neededPerUnit = this.convertQuantity(
         pi.quantity,
         pi.unit,
         pi.ingredient.unit,
@@ -898,7 +1092,7 @@ export class ProductsService {
     const products = await this.productRepository.find();
 
     for (const product of products) {
-      const totalQuantity = await this.salesRepository
+      const totalQuantity = this.salesRepository
         .createQueryBuilder('sale')
         .select('SUM(sale.quantity)', 'sum')
         .where('sale.productId = :productId', { productId: product.id })
