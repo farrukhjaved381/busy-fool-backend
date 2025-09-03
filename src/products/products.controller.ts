@@ -21,6 +21,7 @@ import { Response } from 'express';
 import { join } from 'path';
 import { existsSync } from 'fs';
 import { tmpdir } from 'os';
+import * as path from 'path';
 import { ProductsService } from './products.service';
 import { GetMaxProducibleQuantityResponseDto } from './dto/maxProducible-quantity-response.dto';
 import { CreateProductDto } from './dto/create-product.dto';
@@ -104,19 +105,30 @@ export class ProductsController {
   })
   @HttpCode(HttpStatus.CREATED)
   async create(
-    @Body() createProductDto: CreateProductDto,
+    @Body() createProductDto: any,
     @UploadedFile() image: Express.Multer.File,
     @Req() req: RequestWithUser,
   ): Promise<Product> {
-    // Parse ingredients if it's a string (from form-data)
-    if (typeof createProductDto.ingredients === 'string') {
-      try {
-        createProductDto.ingredients = JSON.parse(createProductDto.ingredients as string);
-      } catch (error) {
-        throw new BadRequestException('Invalid ingredients JSON format');
-      }
+    // Parse and convert form data
+    const parsedDto: CreateProductDto = {
+      name: createProductDto.name,
+      category: createProductDto.category,
+      sell_price: typeof createProductDto.sell_price === 'string' ? parseFloat(createProductDto.sell_price) : createProductDto.sell_price,
+      ingredients: typeof createProductDto.ingredients === 'string' ? JSON.parse(createProductDto.ingredients) : createProductDto.ingredients
+    };
+    
+    // Manual validation
+    if (!parsedDto.name || !parsedDto.category) {
+      throw new BadRequestException('Name and category are required');
     }
-    return this.productsService.create(createProductDto, req.user.sub, image);
+    if (!parsedDto.sell_price || parsedDto.sell_price < 0.01) {
+      throw new BadRequestException('Sell price must be at least 0.01');
+    }
+    if (!Array.isArray(parsedDto.ingredients) || parsedDto.ingredients.length === 0) {
+      throw new BadRequestException('Ingredients must be a non-empty array');
+    }
+    
+    return this.productsService.create(parsedDto, req.user.sub, image);
   }
 
   @Get()
@@ -230,24 +242,29 @@ export class ProductsController {
   })
   async update(
     @Param('id') id: string,
-    @Body() updateProductDto: UpdateProductDto,
+    @Body() updateProductDto: any,
     @UploadedFile() image: Express.Multer.File,
     @Req() req: RequestWithUser,
   ): Promise<Product> {
-    // Parse ingredients if it's a string (from form-data)
-    if (typeof updateProductDto.ingredients === 'string') {
-      try {
-        updateProductDto.ingredients = JSON.parse(updateProductDto.ingredients as string);
-      } catch (error) {
-        throw new BadRequestException('Invalid ingredients JSON format');
+    // Parse and convert form data
+    const parsedDto: UpdateProductDto = {};
+    
+    if (updateProductDto.name) parsedDto.name = updateProductDto.name;
+    if (updateProductDto.category) parsedDto.category = updateProductDto.category;
+    if (updateProductDto.sell_price) {
+      parsedDto.sell_price = typeof updateProductDto.sell_price === 'string' ? parseFloat(updateProductDto.sell_price) : updateProductDto.sell_price;
+      if (parsedDto.sell_price && parsedDto.sell_price < 0.01) {
+        throw new BadRequestException('Sell price must be at least 0.01');
       }
     }
-    return this.productsService.update(
-      id,
-      updateProductDto,
-      req.user.sub,
-      image,
-    );
+    if (updateProductDto.ingredients) {
+      parsedDto.ingredients = typeof updateProductDto.ingredients === 'string' ? JSON.parse(updateProductDto.ingredients) : updateProductDto.ingredients;
+      if (!Array.isArray(parsedDto.ingredients)) {
+        throw new BadRequestException('Ingredients must be an array');
+      }
+    }
+    
+    return this.productsService.update(id, parsedDto, req.user.sub, image);
   }
 
   @Delete(':id')
@@ -460,13 +477,13 @@ export class ProductsController {
     @Param('filename') filename: string,
     @Res() res: Response,
   ): Promise<void> {
-    const uploadDir = process.env.VERCEL ? tmpdir() : join(process.cwd(), 'uploads');
+    const uploadDir = process.env.VERCEL ? join(tmpdir(), 'products') : join(process.cwd(), 'uploads', 'products');
     const imagePath = join(uploadDir, filename);
     
     if (!existsSync(imagePath)) {
       throw new NotFoundException('Image not found');
     }
     
-    res.sendFile(imagePath);
+    return res.sendFile(path.resolve(imagePath));
   }
 }

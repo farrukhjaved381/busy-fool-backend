@@ -9,10 +9,10 @@ export const multerConfig: MulterOptions = {
   storage: diskStorage({
     destination: (req, file, cb) => {
       // Use temp directory for Vercel, local uploads for development
-      const uploadDir = process.env.VERCEL ? tmpdir() : join(process.cwd(), 'uploads');
+      const uploadDir = process.env.VERCEL ? join(tmpdir(), 'products') : join(process.cwd(), 'uploads', 'products');
       
-      // Ensure directory exists (only for local development)
-      if (!process.env.VERCEL && !existsSync(uploadDir)) {
+      // Ensure directory exists
+      if (!existsSync(uploadDir)) {
         mkdirSync(uploadDir, { recursive: true });
       }
       

@@ -485,7 +485,7 @@ export class ProductsService {
 
   private async deleteImageFile(filename: string): Promise<void> {
     try {
-      const uploadDir = process.env.VERCEL ? require('os').tmpdir() : join(process.cwd(), 'uploads');
+      const uploadDir = process.env.VERCEL ? join(require('os').tmpdir(), 'products') : join(process.cwd(), 'uploads', 'products');
       const filePath = join(uploadDir, filename);
       if (existsSync(filePath)) {
         await unlink(filePath);

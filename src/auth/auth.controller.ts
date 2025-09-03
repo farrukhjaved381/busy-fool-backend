@@ -212,8 +212,8 @@ export class AuthController {
     FileInterceptor('profilePicture', {
       storage: diskStorage({
         destination: (req, file, cb) => {
-          const uploadDir = process.env.VERCEL ? require('os').tmpdir() : path.join(process.cwd(), 'uploads');
-          if (!process.env.VERCEL && !fs.existsSync(uploadDir)) {
+          const uploadDir = process.env.VERCEL ? path.join(require('os').tmpdir(), 'profiles') : path.join(process.cwd(), 'uploads', 'profiles');
+          if (!fs.existsSync(uploadDir)) {
             fs.mkdirSync(uploadDir, { recursive: true });
           }
           cb(null, uploadDir);
@@ -371,13 +371,13 @@ export class AuthController {
     @Param('filename') filename: string,
     @Res() res: Response,
   ): Promise<void> {
-    const uploadDir = process.env.VERCEL ? tmpdir() : path.join(process.cwd(), 'uploads');
+    const uploadDir = process.env.VERCEL ? path.join(tmpdir(), 'profiles') : path.join(process.cwd(), 'uploads', 'profiles');
     const imagePath = path.join(uploadDir, filename);
     
     if (!existsSync(imagePath)) {
       throw new NotFoundException('Profile picture not found');
     }
     
-    res.sendFile(imagePath);
+    return res.sendFile(path.resolve(imagePath));
   }
 }
