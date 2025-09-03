@@ -12,6 +12,8 @@ import {
   UploadedFile,
   UnauthorizedException,
   Res,
+  Param,
+  NotFoundException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AuthService } from './auth.service';
@@ -35,6 +37,8 @@ import { RequestWithUser } from './interfaces/request-with-user.interface';
 import * as fs from 'fs';
 import { Response } from 'express';
 import { setRefreshCookie, clearRefreshCookie } from './token.helpers';
+import { existsSync } from 'fs';
+import { tmpdir } from 'os';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -189,18 +193,27 @@ export class AuthController {
     FileInterceptor('profilePicture', {
       storage: diskStorage({
         destination: (req, file, cb) => {
-          const uploadPath = path.join(__dirname, '..', '..', 'public', 'uploads', 'profile_pictures');
-          fs.mkdirSync(uploadPath, { recursive: true });
-          cb(null, uploadPath);
+          const uploadDir = process.env.VERCEL ? require('os').tmpdir() : path.join(process.cwd(), 'uploads');
+          if (!process.env.VERCEL && !fs.existsSync(uploadDir)) {
+            fs.mkdirSync(uploadDir, { recursive: true });
+          }
+          cb(null, uploadDir);
         },
         filename: (req, file, cb) => {
-          const randomName = Array(32)
-            .fill(null)
-            .map(() => Math.round(Math.random() * 16).toString(16))
-            .join('');
-          cb(null, `${randomName}${path.extname(file.originalname)}`);
+          const safeFilename = file.originalname.replace(/\s+/g, '_');
+          const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1E9)}${path.extname(safeFilename)}`;
+          cb(null, uniqueName);
         },
       }),
+      limits: { fileSize: 5 * 1024 * 1024 },
+      fileFilter: (req, file, cb) => {
+        const allowedMimes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+        if (allowedMimes.includes(file.mimetype)) {
+          cb(null, true);
+        } else {
+          cb(new Error('Only JPG, PNG, GIF, and WEBP images are allowed!'), false);
+        }
+      },
     }),
   )
   uploadProfilePicture(
@@ -317,5 +330,32 @@ export class AuthController {
   ) {
     await this.authService.resetPassword(token, newPassword);
     return { message: 'Password has been reset successfully.' };
+  }
+
+  @Get('profile-picture/:filename')
+  @ApiOperation({
+    summary: 'Get profile picture',
+    description: 'Serves profile picture files.',
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Profile picture served successfully.',
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: 'Profile picture not found.',
+  })
+  async getProfilePicture(
+    @Param('filename') filename: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const uploadDir = process.env.VERCEL ? tmpdir() : path.join(process.cwd(), 'uploads');
+    const imagePath = path.join(uploadDir, filename);
+    
+    if (!existsSync(imagePath)) {
+      throw new NotFoundException('Profile picture not found');
+    }
+    
+    res.sendFile(imagePath);
   }
 }

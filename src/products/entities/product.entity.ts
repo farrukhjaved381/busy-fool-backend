@@ -63,6 +63,14 @@ export class Product {
   })
   quantity_sold: number;
 
+  @Column({ nullable: true })
+  @ApiProperty({
+    description: 'Product image filename',
+    example: '1640995200000-product-image.jpg',
+    required: false,
+  })
+  image?: string;
+
   @CreateDateColumn()
   @ApiProperty({
     description: 'Creation timestamp',

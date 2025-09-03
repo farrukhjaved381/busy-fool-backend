@@ -1,5 +1,6 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { MulterModule } from '@nestjs/platform-express';
 import { ProductsService } from './products.service';
 import { ProductsController } from './products.controller';
 import { Product } from './entities/product.entity';
@@ -14,6 +15,9 @@ import { SalesModule } from '../sales/sales.module';
 @Module({
   imports: [
     TypeOrmModule.forFeature([Product, ProductIngredient, Stock, Sale]),
+    MulterModule.register({
+      dest: process.env.VERCEL ? require('os').tmpdir() : './uploads',
+    }),
     IngredientsModule,
     forwardRef(() => StockModule),
     forwardRef(() => SalesModule),

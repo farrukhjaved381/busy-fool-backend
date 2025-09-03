@@ -5,6 +5,9 @@ import {
   Inject,
   forwardRef,
 } from '@nestjs/common';
+import { unlink } from 'fs/promises';
+import { join } from 'path';
+import { existsSync } from 'fs';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThan, EntityManager } from 'typeorm';
 import { classToPlain } from 'class-transformer';
@@ -42,6 +45,7 @@ export class ProductsService {
   async create(
     createProductDto: CreateProductDto,
     userId: string,
+    image?: Express.Multer.File,
   ): Promise<Product> {
     const user = await this.usersService.findById(userId);
     if (!user) throw new BadRequestException('User not found');
@@ -115,6 +119,7 @@ export class ProductsService {
       status: this.calculateStatus(createProductDto.sell_price - totalCost),
       ingredients: productIngredients,
       user: user,
+      image: image?.filename,
     });
 
     const savedProduct = await this.productRepository.save(product);
@@ -308,6 +313,7 @@ export class ProductsService {
     id: string,
     updateProductDto: UpdateProductDto,
     userId: string,
+    image?: Express.Multer.File,
   ): Promise<Product> {
     const product = await this.productRepository.findOne({
       where: { id, user: { id: userId } },
@@ -325,6 +331,15 @@ export class ProductsService {
         throw new BadRequestException('Sell price must be positive');
       }
       product.sell_price = updateProductDto.sell_price;
+    }
+
+    // Handle image update
+    if (image) {
+      // Delete old image if exists
+      if (product.image) {
+        await this.deleteImageFile(product.image);
+      }
+      product.image = image.filename;
     }
 
     let totalCost = 0;
@@ -466,6 +481,19 @@ export class ProductsService {
     }
 
     return classToPlain(refreshedProduct) as Product;
+  }
+
+  private async deleteImageFile(filename: string): Promise<void> {
+    try {
+      const uploadDir = process.env.VERCEL ? require('os').tmpdir() : join(process.cwd(), 'uploads');
+      const filePath = join(uploadDir, filename);
+      if (existsSync(filePath)) {
+        await unlink(filePath);
+      }
+    } catch (error) {
+      console.error('Error deleting image file:', error);
+      // Don't throw error as this is cleanup operation
+    }
   }
 
   async remove(id: string, userId: string): Promise<void> {
@@ -976,17 +1004,26 @@ export class ProductsService {
 
     if (fromLower === toLower) return Number(numQuantity.toFixed(2));
 
+    // Handle unit conversions first
+    if (fromLower === 'unit' && toLower === 'unit')
+      return Number(numQuantity.toFixed(2));
+    
+    // Don't convert between unit and other types
+    if (fromLower === 'unit' || toLower === 'unit') {
+      throw new BadRequestException(
+        `Cannot convert between unit and ${fromLower === 'unit' ? toLower : fromLower}`,
+      );
+    }
+
     const conversionFactors: { [key: string]: number } = {
       ml: 1,
       l: 1000,
       g: 1,
       kg: 1000,
     };
-    const fromFactor = conversionFactors[fromLower] || 1;
-    const toFactor = conversionFactors[toLower] || 1;
+    const fromFactor = conversionFactors[fromLower];
+    const toFactor = conversionFactors[toLower];
 
-    if (fromLower === 'unit' && toLower === 'unit')
-      return Number(numQuantity.toFixed(2));
     if (fromFactor && toFactor) {
       const converted = (numQuantity * fromFactor) / toFactor;
       return Number(converted.toFixed(2));
@@ -1094,7 +1131,7 @@ export class ProductsService {
     const products = await this.productRepository.find();
 
     for (const product of products) {
-      const totalQuantity = this.salesRepository
+      const totalQuantity = await this.salesRepository
         .createQueryBuilder('sale')
         .select('SUM(sale.quantity)', 'sum')
         .where('sale.productId = :productId', { productId: product.id })

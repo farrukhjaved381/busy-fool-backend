@@ -186,7 +186,7 @@ export class AuthService {
       throw new BadRequestException('User not found');
     }
 
-    user.profilePicture = `/uploads/profile_pictures/${file.filename}`;
+    user.profilePicture = file.filename;
     return this.usersRepository.save(user);
   }
 

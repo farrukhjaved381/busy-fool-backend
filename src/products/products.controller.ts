@@ -11,7 +11,16 @@ import {
   BadRequestException,
   HttpStatus,
   Req,
+  UseInterceptors,
+  UploadedFile,
+  Res,
+  NotFoundException,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { Response } from 'express';
+import { join } from 'path';
+import { existsSync } from 'fs';
+import { tmpdir } from 'os';
 import { ProductsService } from './products.service';
 import { GetMaxProducibleQuantityResponseDto } from './dto/maxProducible-quantity-response.dto';
 import { CreateProductDto } from './dto/create-product.dto';
@@ -25,6 +34,7 @@ import {
   ApiResponse,
   ApiBearerAuth,
   ApiBody,
+  ApiConsumes,
 } from '@nestjs/swagger';
 import { Product } from './entities/product.entity';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -32,6 +42,7 @@ import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { UserRole } from '../users/user.entity';
 import { RequestWithUser } from '../auth/interfaces/request-with-user.interface';
+import { multerConfig } from './multer.config';
 
 @ApiTags('products')
 @Controller('products')
@@ -42,10 +53,12 @@ export class ProductsController {
 
   @Post()
   @Roles(UserRole.OWNER)
+  @UseInterceptors(FileInterceptor('image', multerConfig))
   @ApiOperation({
     summary: 'Create a new product',
-    description: 'Creates a new product with associated ingredients.',
+    description: 'Creates a new product with associated ingredients and optional image.',
   })
+  @ApiConsumes('multipart/form-data')
   @ApiBody({ type: CreateProductDto })
   @ApiResponse({
     status: HttpStatus.CREATED,
@@ -67,9 +80,10 @@ export class ProductsController {
   @HttpCode(HttpStatus.CREATED)
   async create(
     @Body() createProductDto: CreateProductDto,
+    @UploadedFile() image: Express.Multer.File,
     @Req() req: RequestWithUser,
   ): Promise<Product> {
-    return this.productsService.create(createProductDto, req.user.sub);
+    return this.productsService.create(createProductDto, req.user.sub, image);
   }
 
   @Get()
@@ -129,10 +143,12 @@ export class ProductsController {
 
   @Patch(':id')
   @Roles(UserRole.OWNER)
+  @UseInterceptors(FileInterceptor('image', multerConfig))
   @ApiOperation({
     summary: 'Update a product',
-    description: 'Updates an existing product and its ingredients.',
+    description: 'Updates an existing product, its ingredients, and optional image.',
   })
+  @ApiConsumes('multipart/form-data')
   @ApiBody({ type: UpdateProductDto })
   @ApiResponse({
     status: HttpStatus.OK,
@@ -158,12 +174,14 @@ export class ProductsController {
   async update(
     @Param('id') id: string,
     @Body() updateProductDto: UpdateProductDto,
+    @UploadedFile() image: Express.Multer.File,
     @Req() req: RequestWithUser,
   ): Promise<Product> {
     return this.productsService.update(
       id,
       updateProductDto,
       req.user.sub,
+      image,
     );
   }
 
@@ -358,5 +376,32 @@ export class ProductsController {
   async recalculateQuantities() {
     await this.productsService.recalculateAllProductQuantities();
     return { message: 'Product quantities recalculated successfully.' };
+  }
+
+  @Get('image/:filename')
+  @ApiOperation({
+    summary: 'Get product image',
+    description: 'Serves product image files.',
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Image file served successfully.',
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: 'Image not found.',
+  })
+  async getImage(
+    @Param('filename') filename: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const uploadDir = process.env.VERCEL ? tmpdir() : join(process.cwd(), 'uploads');
+    const imagePath = join(uploadDir, filename);
+    
+    if (!existsSync(imagePath)) {
+      throw new NotFoundException('Image not found');
+    }
+    
+    res.sendFile(imagePath);
   }
 }

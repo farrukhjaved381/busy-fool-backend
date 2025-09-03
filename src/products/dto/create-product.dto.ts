@@ -68,4 +68,13 @@ export class CreateProductDto {
     ],
   })
   ingredients: IngredientDetail[];
+
+  @IsOptional()
+  @ApiProperty({
+    description: 'Product image file',
+    type: 'string',
+    format: 'binary',
+    required: false,
+  })
+  image?: any;
 }

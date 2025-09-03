@@ -125,12 +125,21 @@ export class SalesService {
           );
           for (const stock of stocks) {
             if (remainingToDeduct <= 0) break;
-            const stockRemainingInRequestedUnit =
-              await this.productsService.convertQuantity(
-                stock.remaining_quantity,
-                stock.unit,
-                requestedUnit,
-              ); // Use productsService
+            let stockRemainingInRequestedUnit = stock.remaining_quantity;
+            
+            // Only convert if units are different and compatible
+            if (stock.unit !== requestedUnit) {
+              if (this.productsService.isCompatibleUnit(stock.unit, requestedUnit)) {
+                stockRemainingInRequestedUnit = this.productsService.convertQuantity(
+                  stock.remaining_quantity,
+                  stock.unit,
+                  requestedUnit,
+                );
+              } else {
+                // Skip this stock if units are incompatible
+                continue;
+              }
+            }
 
             // ADD THESE LOGS HERE:
             console.log(`Debugging deduction for ingredient ${ingredientId}:`);
@@ -162,12 +171,22 @@ export class SalesService {
                 `Invalid deduction amount or incompatible units for stock ${stock.id}`,
               );
             }
-            const deductAmountInStockUnit =
-              await this.productsService.convertQuantity(
-                deductAmountInRequestedUnit,
-                requestedUnit,
-                stock.unit,
-              ); // Use productsService
+            let deductAmountInStockUnit = deductAmountInRequestedUnit;
+            
+            // Only convert if units are different and compatible
+            if (requestedUnit !== stock.unit) {
+              if (this.productsService.isCompatibleUnit(requestedUnit, stock.unit)) {
+                deductAmountInStockUnit = this.productsService.convertQuantity(
+                  deductAmountInRequestedUnit,
+                  requestedUnit,
+                  stock.unit,
+                );
+              } else {
+                throw new BadRequestException(
+                  `Incompatible units: ${requestedUnit} and ${stock.unit} for ingredient ${ingredientId}`,
+                );
+              }
+            }
             stock.remaining_quantity = Math.max(
               0,
               stock.remaining_quantity - deductAmountInStockUnit,
