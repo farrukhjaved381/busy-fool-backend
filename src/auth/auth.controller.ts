@@ -14,12 +14,14 @@ import {
   Res,
   Param,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AuthService } from './auth.service';
 import { CreateUserDto } from '../users/dto/create-user.dto';
 import { UpdateUserDto } from '../users/dto/update-user.dto';
 import { LoginDto } from './dto/login.dto';
+import { AuthResponseDto, AccessTokenResponseDto } from './dto/auth-response.dto';
 import {
   ApiTags,
   ApiOperation,
@@ -50,7 +52,7 @@ export class AuthController {
   @ApiResponse({
     status: 201,
     description: 'User registered successfully',
-    schema: { type: 'object', properties: { accessToken: { type: 'string' } } },
+    type: AuthResponseDto,
   })
   @ApiResponse({
     status: 400,
@@ -71,7 +73,7 @@ export class AuthController {
   async register(@Body() createUserDto: CreateUserDto, @Res({ passthrough: true }) res: Response, @Request() req: RequestWithUser) {
     const { accessToken, refreshToken } = await this.authService.register(createUserDto);
     setRefreshCookie(res, refreshToken, process.env.COOKIE_DOMAIN, req);
-    return { accessToken };
+    return { accessToken, refreshToken };
   }
 
   @Post('login')
@@ -79,7 +81,7 @@ export class AuthController {
   @ApiResponse({
     status: 200,
     description: 'User logged in successfully',
-    schema: { type: 'object', properties: { accessToken: { type: 'string' } } },
+    type: AuthResponseDto,
   })
   @ApiResponse({
     status: 401,
@@ -98,7 +100,7 @@ export class AuthController {
   async login(@Body() loginDto: LoginDto, @Res({ passthrough: true }) res: Response, @Request() req: RequestWithUser) {
     const { accessToken, refreshToken } = await this.authService.login(loginDto);
     setRefreshCookie(res, refreshToken, process.env.COOKIE_DOMAIN, req);
-    return { accessToken };
+    return { accessToken, refreshToken };
   }
 
   @UseGuards(JwtAuthGuard)
@@ -177,17 +179,34 @@ export class AuthController {
 
   @UseGuards(JwtAuthGuard)
   @Post('upload-profile-picture')
-  @ApiConsumes('multipart/form-data') // Add this line
-  @ApiBody({ // Add this decorator
+  @ApiBearerAuth('JWT')
+  @ApiOperation({ summary: 'Upload profile picture' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
     schema: {
       type: 'object',
       properties: {
         profilePicture: {
           type: 'string',
-          format: 'binary', // This tells Swagger it's a file upload
+          format: 'binary',
+          description: 'Profile picture file (JPG, PNG, GIF, WEBP - max 5MB)',
         },
       },
+      required: ['profilePicture'],
     },
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Profile picture uploaded successfully',
+    type: User,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid file type or size',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized (missing or invalid JWT)',
   })
   @UseInterceptors(
     FileInterceptor('profilePicture', {
@@ -220,6 +239,9 @@ export class AuthController {
     @Request() req: RequestWithUser,
     @UploadedFile() file: Express.Multer.File,
   ) {
+    if (!file) {
+      throw new BadRequestException('Profile picture file is required');
+    }
     return this.authService.uploadProfilePicture(req.user.sub, file);
   }
 
@@ -252,7 +274,7 @@ export class AuthController {
   @ApiResponse({
     status: 200,
     description: 'Access token refreshed successfully',
-    schema: { type: 'object', properties: { accessToken: { type: 'string' } } },
+    type: AuthResponseDto,
   })
   @ApiResponse({
     status: 401,
@@ -274,7 +296,7 @@ export class AuthController {
     }
     const { accessToken, refreshToken: newRefreshToken } = await this.authService.rotateRefreshToken(refreshToken);
     setRefreshCookie(res, newRefreshToken, process.env.COOKIE_DOMAIN, req);
-    return { accessToken };
+    return { accessToken, refreshToken: newRefreshToken };
   }
 
   @Post('forgot-password')

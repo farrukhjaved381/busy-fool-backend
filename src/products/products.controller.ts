@@ -59,7 +59,32 @@ export class ProductsController {
     description: 'Creates a new product with associated ingredients and optional image.',
   })
   @ApiConsumes('multipart/form-data')
-  @ApiBody({ type: CreateProductDto })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', example: 'Coffee Latte' },
+        category: { type: 'string', example: 'Beverage' },
+        sell_price: { type: 'number', example: 4.5 },
+        ingredients: {
+          type: 'string',
+          example: JSON.stringify([{
+            ingredientId: '123e4567-e89b-12d3-a456-426614174000',
+            quantity: 200,
+            unit: 'ml',
+            is_optional: false
+          }]),
+          description: 'JSON string of ingredients array'
+        },
+        image: {
+          type: 'string',
+          format: 'binary',
+          description: 'Product image file (JPG, PNG, GIF, WEBP - max 5MB)'
+        }
+      },
+      required: ['name', 'category', 'sell_price', 'ingredients']
+    }
+  })
   @ApiResponse({
     status: HttpStatus.CREATED,
     description: 'Product successfully created.',
@@ -83,6 +108,14 @@ export class ProductsController {
     @UploadedFile() image: Express.Multer.File,
     @Req() req: RequestWithUser,
   ): Promise<Product> {
+    // Parse ingredients if it's a string (from form-data)
+    if (typeof createProductDto.ingredients === 'string') {
+      try {
+        createProductDto.ingredients = JSON.parse(createProductDto.ingredients as string);
+      } catch (error) {
+        throw new BadRequestException('Invalid ingredients JSON format');
+      }
+    }
     return this.productsService.create(createProductDto, req.user.sub, image);
   }
 
@@ -149,7 +182,31 @@ export class ProductsController {
     description: 'Updates an existing product, its ingredients, and optional image.',
   })
   @ApiConsumes('multipart/form-data')
-  @ApiBody({ type: UpdateProductDto })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', example: 'Updated Coffee Latte' },
+        category: { type: 'string', example: 'Beverage' },
+        sell_price: { type: 'number', example: 5.0 },
+        ingredients: {
+          type: 'string',
+          example: JSON.stringify([{
+            ingredientId: '123e4567-e89b-12d3-a456-426614174000',
+            quantity: 250,
+            unit: 'ml',
+            is_optional: false
+          }]),
+          description: 'JSON string of ingredients array'
+        },
+        image: {
+          type: 'string',
+          format: 'binary',
+          description: 'Product image file (JPG, PNG, GIF, WEBP - max 5MB)'
+        }
+      }
+    }
+  })
   @ApiResponse({
     status: HttpStatus.OK,
     description: 'Product successfully updated.',
@@ -177,6 +234,14 @@ export class ProductsController {
     @UploadedFile() image: Express.Multer.File,
     @Req() req: RequestWithUser,
   ): Promise<Product> {
+    // Parse ingredients if it's a string (from form-data)
+    if (typeof updateProductDto.ingredients === 'string') {
+      try {
+        updateProductDto.ingredients = JSON.parse(updateProductDto.ingredients as string);
+      } catch (error) {
+        throw new BadRequestException('Invalid ingredients JSON format');
+      }
+    }
     return this.productsService.update(
       id,
       updateProductDto,
