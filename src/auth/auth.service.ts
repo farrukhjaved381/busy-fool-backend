@@ -19,6 +19,7 @@ import { MailService } from '../mail/mail.service';
 import { ConfigService } from '@nestjs/config';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { hashToken, compareToken } from './token.helpers';
+import { UrlService } from '../common/url.service';
 
 // Type guard for valid duration string
 function isValidDurationString(value: string): value is string {
@@ -40,6 +41,7 @@ export class AuthService {
     private jwtService: JwtService,
     private mailService: MailService,
     private configService: ConfigService,
+    private urlService: UrlService,
   ) {}
 
   async register(createUserDto: CreateUserDto): Promise<{ accessToken: string; refreshToken: string }> {
@@ -146,6 +148,10 @@ export class AuthService {
     if (!user) {
       throw new BadRequestException('User not found');
     }
+    // Convert filename to full URL if it's just a filename
+    if (user.profilePicture && !user.profilePicture.startsWith('http')) {
+      user.profilePicture = this.urlService.getProfilePictureUrl(user.profilePicture);
+    }
     return user;
   }
 
@@ -186,7 +192,7 @@ export class AuthService {
       throw new BadRequestException('User not found');
     }
 
-    user.profilePicture = file.filename;
+    user.profilePicture = this.urlService.getProfilePictureUrl(file.filename);
     return this.usersRepository.save(user);
   }
 

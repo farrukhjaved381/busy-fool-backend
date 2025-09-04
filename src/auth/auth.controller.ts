@@ -378,6 +378,11 @@ export class AuthController {
       throw new NotFoundException('Profile picture not found');
     }
     
+    // Set CORS headers explicitly for images
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET');
+    res.header('Cache-Control', 'public, max-age=31536000');
+    
     return res.sendFile(path.resolve(imagePath));
   }
 }

@@ -11,6 +11,7 @@ import { Stock } from '../stock/entities/stock.entity';
 import { UsersModule } from '../users/users.module';
 import { Sale } from '../sales/entities/sale.entity';
 import { SalesModule } from '../sales/sales.module';
+import { UrlService } from '../common/url.service';
 
 @Module({
   imports: [
@@ -24,7 +25,7 @@ import { SalesModule } from '../sales/sales.module';
     UsersModule,
   ],
   controllers: [ProductsController],
-  providers: [ProductsService],
+  providers: [ProductsService, UrlService],
   exports: [ProductsService, TypeOrmModule],
 })
 export class ProductsModule {}

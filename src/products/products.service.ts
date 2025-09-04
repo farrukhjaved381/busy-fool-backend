@@ -24,6 +24,7 @@ import { MilkSwapDto } from './dto/milk-swap.dto';
 import { QuickActionDto } from './dto/quick-action.dto';
 import { UsersService } from '../users/users.service'; // Import UsersService
 import { Sale } from '../sales/entities/sale.entity';
+import { UrlService } from '../common/url.service';
 
 @Injectable()
 export class ProductsService {
@@ -40,6 +41,7 @@ export class ProductsService {
     private readonly stockService: StockService,
     private readonly entityManager: EntityManager,
     private readonly usersService: UsersService, // Inject UsersService
+    private readonly urlService: UrlService,
   ) {}
 
   async create(
@@ -119,7 +121,7 @@ export class ProductsService {
       status: this.calculateStatus(createProductDto.sell_price - totalCost),
       ingredients: productIngredients,
       user: user,
-      image: image?.filename,
+      image: image ? this.urlService.getProductImageUrl(image.filename) : undefined,
     });
 
     const savedProduct = await this.productRepository.save(product);
@@ -270,13 +272,21 @@ export class ProductsService {
 
   async findAll(userId: string): Promise<Product[]> {
     // Modified to accept userId
-    console.log('Fetching all products for user:', userId);
-    return this.productRepository
+    const products = await this.productRepository
       .createQueryBuilder('product')
       .leftJoinAndSelect('product.ingredients', 'productIngredient')
       .leftJoinAndSelect('productIngredient.ingredient', 'ingredient')
       .where('product.user.id = :userId', { userId })
       .getMany();
+    
+    // Convert filenames to full URLs if they're just filenames
+    products.forEach(product => {
+      if (product.image && !product.image.startsWith('http')) {
+        product.image = this.urlService.getProductImageUrl(product.image);
+      }
+    });
+    
+    return products;
   }
 
   async findAllByUser(userId: string): Promise<Product[]> {
@@ -284,7 +294,6 @@ export class ProductsService {
   }
 
   async findOne(id: string, userId: string): Promise<Product> {
-    console.log('Finding product with ID:', id, 'for user:', userId);
     const product = await this.productRepository
       .createQueryBuilder('product')
       .leftJoinAndSelect('product.ingredients', 'productIngredient')
@@ -337,9 +346,12 @@ export class ProductsService {
     if (image) {
       // Delete old image if exists
       if (product.image) {
-        await this.deleteImageFile(product.image);
+        const oldFilename = product.image.split('/').pop();
+        if (oldFilename) {
+          await this.deleteImageFile(oldFilename);
+        }
       }
-      product.image = image.filename;
+      product.image = this.urlService.getProductImageUrl(image.filename);
     }
 
     let totalCost = 0;

@@ -11,6 +11,7 @@ import { JwtStrategy } from './jwt.strategy';
 import { UsersModule } from '../users/users.module';
 import { MailModule } from '../mail/mail.module';
 import { RefreshToken } from './entities/refresh-token.entity';
+import { UrlService } from '../common/url.service';
 
 @Module({
   imports: [
@@ -29,7 +30,7 @@ import { RefreshToken } from './entities/refresh-token.entity';
     MailModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
+  providers: [AuthService, JwtStrategy, UrlService],
   exports: [AuthService, JwtModule],
 })
 export class AuthModule {}

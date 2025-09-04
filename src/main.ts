@@ -76,8 +76,18 @@ async function bootstrap() {
   // Serve the static swagger.html file
   app.useStaticAssets(path.join(__dirname, '..', 'public'));
 
-  // Enable CORS
-  app.enableCors();
+  // Enable CORS with specific configuration
+  app.enableCors({
+    origin: [
+      'http://localhost:5173',
+      'http://localhost:3001',
+      'https://busyfoolfrontend-six.vercel.app',
+      'https://*.vercel.app'
+    ],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+    credentials: true,
+  });
 
   const configService = app.get(ConfigService);
   console.log(`DB_HOST: ${configService.get('DB_HOST')}`);
