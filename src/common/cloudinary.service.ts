@@ -17,11 +17,7 @@ export class CloudinaryService {
       cloudinary.uploader.upload_stream(
         {
           folder: folder,
-          resource_type: 'image',
-          transformation: [
-            { width: 800, height: 600, crop: 'limit' },
-            { quality: 'auto' }
-          ]
+          resource_type: 'image'
         },
         (error, result) => {
           if (error) {
