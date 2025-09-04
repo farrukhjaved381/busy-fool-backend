@@ -461,34 +461,11 @@ export class ProductsController {
   }
 
   @Get('image/:filename')
-  @ApiOperation({
-    summary: 'Get product image',
-    description: 'Serves product image files.',
-  })
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: 'Image file served successfully.',
-  })
-  @ApiResponse({
-    status: HttpStatus.NOT_FOUND,
-    description: 'Image not found.',
-  })
+  @ApiOperation({ summary: 'Get product image (legacy)' })
   async getImage(
     @Param('filename') filename: string,
     @Res() res: Response,
   ): Promise<void> {
-    const uploadDir = process.env.VERCEL ? join(tmpdir(), 'products') : join(process.cwd(), 'uploads', 'products');
-    const imagePath = join(uploadDir, filename);
-    
-    if (!existsSync(imagePath)) {
-      throw new NotFoundException('Image not found');
-    }
-    
-    // Set CORS headers explicitly for images
-    res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Methods', 'GET');
-    res.header('Cache-Control', 'public, max-age=31536000');
-    
-    return res.sendFile(path.resolve(imagePath));
+    throw new NotFoundException('Image not found - please re-upload');
   }
 }

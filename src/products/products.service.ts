@@ -25,6 +25,7 @@ import { QuickActionDto } from './dto/quick-action.dto';
 import { UsersService } from '../users/users.service'; // Import UsersService
 import { Sale } from '../sales/entities/sale.entity';
 import { UrlService } from '../common/url.service';
+import { CloudinaryService } from '../common/cloudinary.service';
 
 @Injectable()
 export class ProductsService {
@@ -42,6 +43,7 @@ export class ProductsService {
     private readonly entityManager: EntityManager,
     private readonly usersService: UsersService, // Inject UsersService
     private readonly urlService: UrlService,
+    private readonly cloudinaryService: CloudinaryService,
   ) {}
 
   async create(
@@ -121,7 +123,7 @@ export class ProductsService {
       status: this.calculateStatus(createProductDto.sell_price - totalCost),
       ingredients: productIngredients,
       user: user,
-      image: image ? this.urlService.getProductImageUrl(image.filename) : undefined,
+      image: image ? await this.cloudinaryService.uploadImage(image, 'products') : undefined,
     });
 
     const savedProduct = await this.productRepository.save(product);
@@ -344,14 +346,8 @@ export class ProductsService {
 
     // Handle image update
     if (image) {
-      // Delete old image if exists
-      if (product.image) {
-        const oldFilename = product.image.split('/').pop();
-        if (oldFilename) {
-          await this.deleteImageFile(oldFilename);
-        }
-      }
-      product.image = this.urlService.getProductImageUrl(image.filename);
+      // Upload new image to Cloudinary
+      product.image = await this.cloudinaryService.uploadImage(image, 'products');
     }
 
     let totalCost = 0;

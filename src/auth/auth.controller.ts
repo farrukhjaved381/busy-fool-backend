@@ -210,20 +210,7 @@ export class AuthController {
   })
   @UseInterceptors(
     FileInterceptor('profilePicture', {
-      storage: diskStorage({
-        destination: (req, file, cb) => {
-          const uploadDir = process.env.VERCEL ? path.join(require('os').tmpdir(), 'profiles') : path.join(process.cwd(), 'uploads', 'profiles');
-          if (!fs.existsSync(uploadDir)) {
-            fs.mkdirSync(uploadDir, { recursive: true });
-          }
-          cb(null, uploadDir);
-        },
-        filename: (req, file, cb) => {
-          const safeFilename = file.originalname.replace(/\s+/g, '_');
-          const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1E9)}${path.extname(safeFilename)}`;
-          cb(null, uniqueName);
-        },
-      }),
+      storage: require('multer').memoryStorage(),
       limits: { fileSize: 5 * 1024 * 1024 },
       fileFilter: (req, file, cb) => {
         const allowedMimes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
@@ -355,34 +342,11 @@ export class AuthController {
   }
 
   @Get('profile-picture/:filename')
-  @ApiOperation({
-    summary: 'Get profile picture',
-    description: 'Serves profile picture files.',
-  })
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: 'Profile picture served successfully.',
-  })
-  @ApiResponse({
-    status: HttpStatus.NOT_FOUND,
-    description: 'Profile picture not found.',
-  })
+  @ApiOperation({ summary: 'Get profile picture (legacy)' })
   async getProfilePicture(
     @Param('filename') filename: string,
     @Res() res: Response,
   ): Promise<void> {
-    const uploadDir = process.env.VERCEL ? path.join(tmpdir(), 'profiles') : path.join(process.cwd(), 'uploads', 'profiles');
-    const imagePath = path.join(uploadDir, filename);
-    
-    if (!existsSync(imagePath)) {
-      throw new NotFoundException('Profile picture not found');
-    }
-    
-    // Set CORS headers explicitly for images
-    res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Methods', 'GET');
-    res.header('Cache-Control', 'public, max-age=31536000');
-    
-    return res.sendFile(path.resolve(imagePath));
+    throw new NotFoundException('Profile picture not found - please re-upload');
   }
 }

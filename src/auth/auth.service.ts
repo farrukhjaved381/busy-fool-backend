@@ -20,6 +20,7 @@ import { ConfigService } from '@nestjs/config';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { hashToken, compareToken } from './token.helpers';
 import { UrlService } from '../common/url.service';
+import { CloudinaryService } from '../common/cloudinary.service';
 
 // Type guard for valid duration string
 function isValidDurationString(value: string): value is string {
@@ -42,6 +43,7 @@ export class AuthService {
     private mailService: MailService,
     private configService: ConfigService,
     private urlService: UrlService,
+    private cloudinaryService: CloudinaryService,
   ) {}
 
   async register(createUserDto: CreateUserDto): Promise<{ accessToken: string; refreshToken: string }> {
@@ -148,10 +150,6 @@ export class AuthService {
     if (!user) {
       throw new BadRequestException('User not found');
     }
-    // Convert filename to full URL if it's just a filename
-    if (user.profilePicture && !user.profilePicture.startsWith('http')) {
-      user.profilePicture = this.urlService.getProfilePictureUrl(user.profilePicture);
-    }
     return user;
   }
 
@@ -192,7 +190,9 @@ export class AuthService {
       throw new BadRequestException('User not found');
     }
 
-    user.profilePicture = this.urlService.getProfilePictureUrl(file.filename);
+    // Upload to Cloudinary
+    const imageUrl = await this.cloudinaryService.uploadImage(file, 'profiles');
+    user.profilePicture = imageUrl;
     return this.usersRepository.save(user);
   }
 

@@ -1,30 +1,8 @@
 import { MulterOptions } from '@nestjs/platform-express/multer/interfaces/multer-options.interface';
-import { diskStorage } from 'multer';
-import { extname } from 'path';
-import { existsSync, mkdirSync } from 'fs';
-import { tmpdir } from 'os';
-import { join } from 'path';
+import { memoryStorage } from 'multer';
 
 export const multerConfig: MulterOptions = {
-  storage: diskStorage({
-    destination: (req, file, cb) => {
-      // Use temp directory for Vercel, local uploads for development
-      const uploadDir = process.env.VERCEL ? join(tmpdir(), 'products') : join(process.cwd(), 'uploads', 'products');
-      
-      // Ensure directory exists
-      if (!existsSync(uploadDir)) {
-        mkdirSync(uploadDir, { recursive: true });
-      }
-      
-      cb(null, uploadDir);
-    },
-    filename: (req, file, cb) => {
-      // Generate unique filename with timestamp
-      const safeFilename = file.originalname.replace(/\s+/g, '_');
-      const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1E9)}${extname(safeFilename)}`;
-      cb(null, uniqueName);
-    },
-  }),
+  storage: memoryStorage(),
   limits: {
     fileSize: 5 * 1024 * 1024, // 5MB limit
   },
